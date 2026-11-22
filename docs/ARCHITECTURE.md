@@ -41,7 +41,7 @@ anything, so only what exists is in the repository.
 | `src/compat/` | Headers bridging Switch toolchain and host toolchain | 1 |
 | `src/nn/<area>/` | The SDK's system services implemented on the host, one directory per SDK area (`os`, `fs`, `hid`, `account`, `socket`, `oe`, `settings`, `time` ...) | 2, 3 |
 | `src/gfx/` | The renderer (see Graphics below) | 4 |
-| `src/audio/` | An FMOD output driver for the host's audio device | 6 |
+| `src/audio/` | Audio: route to be decided (see FMOD below) | 6 |
 | `src/replace/` | Replacements for decomp files excluded from the build | as needed |
 | `tools/` | Progress meters, game-data verification | all |
 | `tests/` | Tests of the platform layer | 2 onward |
@@ -88,10 +88,41 @@ investigate once a dump is available (roadmap, milestone 4).
 
 ## Audio, physics and other middleware
 
-The decomp includes source for the middleware the game links: FMOD Studio, Domino
-(physics), Lua, zlib, Ogg Vorbis, PCRE, protobuf, curl, DemonWare. They are built
-from that source. FMOD needs an output driver for the host; the rest need no
-platform work beyond compiling. DemonWare and curl are only for online services.
+The decomp includes source for most middleware the game links: Domino (physics),
+Lua, zlib, Ogg Vorbis, PCRE, protobuf, curl, DemonWare. They are built from that
+source and need no platform work beyond compiling. DemonWare and curl are only
+for online services.
+
+**FMOD (audio) is the exception.** The decomp has its headers only; the library
+itself is part of the 2,191 functions without source. The game calls 74 FMOD
+functions. They must come from FMOD's own macOS library, which each person would
+download themselves, or from a replacement written here.
+
+## Game data tables
+
+211 variables that exist in the original program (name tables, default lists,
+constants) are declared in the decomp but not defined, because the decomp's goal
+is matching functions. They are game content and cannot be stored in this
+repository. Milestone 2 decides between writing them in the decomp and generating
+them at build time from the player's own copy.
+
+## How the decomp is made to compile on the host
+
+Nothing in the decomp is edited. Three mechanisms, all in `src/compat/` and
+`cmake/DecompSources.cmake`:
+
+- **A prefix header** (`d3_host_prefix.h`) is read before every decomp file. Its
+  main job: on macOS `int64_t` is `long long`, on the Switch it is `long`. The
+  game's source treats `uint64` and `unsigned long` as one type, so the prefix
+  makes them one type on macOS too. Platform-layer code that shares C++
+  interfaces with the game must be compiled with the same prefix.
+- **Stand-in headers** placed earlier on the include path than the decomp's own,
+  for the few decomp headers written against the Switch's libraries.
+- **Per-library settings** copied from the decomp's build where they change
+  behaviour (for example which libraries treat `char` as unsigned).
+
+The decomp's top-level `include/` directory is not used: it rebinds libc names to
+Switch symbols.
 
 ## Platform differences to watch
 
@@ -100,10 +131,10 @@ as the Switch: 64-bit ARM, same pointer and integer sizes, and `char` is signed 
 both. Known differences that could matter where the game reads data files straight
 into structures or relies on type sizes:
 
+- `int64_t` is `long long` on macOS and `long` on the Switch. Handled: see the prefix header above.
 - `long double` is 128-bit on the Switch, 64-bit on macOS.
 - `wchar_t` is unsigned on the Switch, signed on macOS.
 - The C++ standard library's own types are laid out differently.
 - Memory pages are 16 KB on macOS, 4 KB on the Switch.
 
-None of these has been checked against the game yet. The decomp's structure size
-assertions run in every host compile and will flag any layout that moves.
+Apart from the first, none of these has been checked against the game yet.

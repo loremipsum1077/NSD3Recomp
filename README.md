@@ -4,8 +4,8 @@ A native port of **Diablo III 2.6.2 (Nintendo Switch)**, built by recompiling th
 decompiled source from [NSD3Decomp](https://github.com/loremipsum1077/NSD3Decomp)
 for desktop platforms. macOS on Apple silicon is the first target.
 
-**Status: the game does not run yet.** Milestone 0 (project foundations) is in
-progress. See the [roadmap](docs/ROADMAP.md).
+**Status: the game does not run yet.** Every source file of the decomp compiles
+for macOS; linking is the current milestone (691 undefined symbols). See the [roadmap](docs/ROADMAP.md).
 
 ## What is and is not in this repository
 
@@ -51,4 +51,10 @@ python3 tools/compile_probe.py
 ```
 
 reports how many of the decomp's source files the host compiler accepts, and the
-most common reasons for the rest.
+most common reasons for the rest. To compile everything and count what is still
+missing at link time:
+
+```sh
+cmake --build build/macos --target d3_game d3_middleware -- -k 0
+python3 tools/link_probe.py
+```
