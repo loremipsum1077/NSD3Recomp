@@ -18,3 +18,10 @@ set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game" CACHE PATH "Folder holding the user
 # and the platform layer are added to it milestone by milestone (docs/ROADMAP.md).
 add_executable(d3 src/host/main.cpp)
 target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}")
+
+# The platform layer: everything that replaces the Switch underneath the game.
+file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
+    src/nn/*.c src/nn/*.cpp src/gfx/*.c src/gfx/*.cpp src/audio/*.c src/audio/*.cpp
+    src/libc/*.c src/host/unimplemented.c)
+add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES})
+target_include_directories(d3_platform PRIVATE src)

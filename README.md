@@ -5,7 +5,7 @@ decompiled source from [NSD3Decomp](https://github.com/loremipsum1077/NSD3Decomp
 for desktop platforms. macOS on Apple silicon is the first target.
 
 **Status: the game does not run yet.** Every source file of the decomp compiles
-for macOS; linking is the current milestone (691 undefined symbols). See the [roadmap](docs/ROADMAP.md).
+for macOS; linking is the current milestone (263 undefined symbols, down from 691). See the [roadmap](docs/ROADMAP.md).
 
 ## What is and is not in this repository
 

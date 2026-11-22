@@ -1,0 +1,25 @@
+// Functions not implemented yet. Each stops the program and prints its name.
+// Added by tools/gen_stubs.py; delete a line when the real function is written.
+#include "host/unimplemented.h"
+
+D3_STUB(_ZN2nn3hid27BindNpadStyleSetUpdateEventERKjPNS_2os15SystemEventTypeENS3_14EventClearModeE, "nn::hid::BindNpadStyleSetUpdateEvent(unsigned int const&, nn::os::SystemEventType*, nn::os::EventClearMode)")
+D3_STUB(_ZN2nn3hid13GetNpadStatesEPNS0_16NpadFullKeyStateEiRKj, "nn::hid::GetNpadStates(nn::hid::NpadFullKeyState*, int, unsigned int const&)")
+D3_STUB(_ZN2nn3hid13GetNpadStatesEPNS0_17NpadHandheldStateEiRKj, "nn::hid::GetNpadStates(nn::hid::NpadHandheldState*, int, unsigned int const&)")
+D3_STUB(_ZN2nn3hid13GetNpadStatesEPNS0_16NpadJoyDualStateEiRKj, "nn::hid::GetNpadStates(nn::hid::NpadJoyDualState*, int, unsigned int const&)")
+D3_STUB(_ZN2nn3hid13GetNpadStatesEPNS0_16NpadJoyLeftStateEiRKj, "nn::hid::GetNpadStates(nn::hid::NpadJoyLeftState*, int, unsigned int const&)")
+D3_STUB(_ZN2nn3hid13GetNpadStatesEPNS0_17NpadJoyRightStateEiRKj, "nn::hid::GetNpadStates(nn::hid::NpadJoyRightState*, int, unsigned int const&)")
+D3_STUB(_ZN2nn3hid15GetNpadStyleSetERKj, "nn::hid::GetNpadStyleSet(unsigned int const&)")
+D3_STUB(_ZN2nn3hid23GetSixAxisSensorHandlesEPNS0_19SixAxisSensorHandleEiRKjNS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE, "nn::hid::GetSixAxisSensorHandles(nn::hid::SixAxisSensorHandle*, int, unsigned int const&, nn::util::BitFlagSet<32, nn::hid::NpadStyleTag>)")
+D3_STUB(_ZN2nn3hid22GetSixAxisSensorStatesEPNS0_18SixAxisSensorStateEiRKNS0_19SixAxisSensorHandleE, "nn::hid::GetSixAxisSensorStates(nn::hid::SixAxisSensorState*, int, nn::hid::SixAxisSensorHandle const&)")
+D3_STUB(_ZN2nn3hid25GetVibrationDeviceHandlesEPNS0_21VibrationDeviceHandleEiRKjNS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE, "nn::hid::GetVibrationDeviceHandles(nn::hid::VibrationDeviceHandle*, int, unsigned int const&, nn::util::BitFlagSet<32, nn::hid::NpadStyleTag>)")
+D3_STUB(_ZN2nn3hid22GetVibrationDeviceInfoEPNS0_19VibrationDeviceInfoERKNS0_21VibrationDeviceHandleE, "nn::hid::GetVibrationDeviceInfo(nn::hid::VibrationDeviceInfo*, nn::hid::VibrationDeviceHandle const&)")
+D3_STUB(_ZN2nn3hid14InitializeNpadEv, "nn::hid::InitializeNpad()")
+D3_STUB(_ZN2nn3hid25InitializeVibrationDeviceERKNS0_21VibrationDeviceHandleE, "nn::hid::InitializeVibrationDevice(nn::hid::VibrationDeviceHandle const&)")
+D3_STUB(_ZN2nn3hid18SendVibrationValueERKNS0_21VibrationDeviceHandleERKNS0_14VibrationValueE, "nn::hid::SendVibrationValue(nn::hid::VibrationDeviceHandle const&, nn::hid::VibrationValue const&)")
+D3_STUB(_ZN2nn3hid18SetNpadJoyHoldTypeENS0_15NpadJoyHoldTypeE, "nn::hid::SetNpadJoyHoldType(nn::hid::NpadJoyHoldType)")
+D3_STUB(_ZN2nn3hid22SetSupportedNpadIdTypeEPKjm, "nn::hid::SetSupportedNpadIdType(unsigned int const*, unsigned long)")
+D3_STUB(_ZN2nn3hid24SetSupportedNpadStyleSetENS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE, "nn::hid::SetSupportedNpadStyleSet(nn::util::BitFlagSet<32, nn::hid::NpadStyleTag>)")
+D3_STUB(_ZN2nn3hid24ShowControllerStrapGuideEv, "nn::hid::ShowControllerStrapGuide()")
+D3_STUB(_ZN2nn3hid21ShowControllerSupportERKNS0_20ControllerSupportArgE, "nn::hid::ShowControllerSupport(nn::hid::ControllerSupportArg const&)")
+D3_STUB(_ZN2nn3hid18StartSixAxisSensorERKNS0_19SixAxisSensorHandleE, "nn::hid::StartSixAxisSensor(nn::hid::SixAxisSensorHandle const&)")
+D3_STUB(_ZN2nn3hid17StopSixAxisSensorERKNS0_19SixAxisSensorHandleE, "nn::hid::StopSixAxisSensor(nn::hid::SixAxisSensorHandle const&)")

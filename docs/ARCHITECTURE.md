@@ -39,7 +39,8 @@ anything, so only what exists is in the repository.
 |---|---|---|
 | `src/host/` | `main`, startup, window, main loop, paths, configuration | 0, 3 |
 | `src/compat/` | Headers bridging Switch toolchain and host toolchain | 1 |
-| `src/nn/<area>/` | The SDK's system services implemented on the host, one directory per SDK area (`os`, `fs`, `hid`, `account`, `socket`, `oe`, `settings`, `time` ...) | 2, 3 |
+| `src/nn/<area>/` | The SDK's system services implemented on the host, one directory per SDK area (`os`, `fs`, `hid`, `account`, `socket`, `oe`, `settings`, `time` ...). `unimplemented.c` in each lists what is still a stand-in | 2, 3 |
+| `src/libc/` | Pieces of the Switch's C library that the source depends on by layout or name | 2 |
 | `src/gfx/` | The renderer (see Graphics below) | 4 |
 | `src/audio/` | Audio: route to be decided (see FMOD below) | 6 |
 | `src/replace/` | Replacements for decomp files excluded from the build | as needed |
@@ -100,8 +101,8 @@ download themselves, or from a replacement written here.
 
 ## Game data tables
 
-211 variables that exist in the original program (name tables, default lists,
-constants) are declared in the decomp but not defined, because the decomp's goal
+238 variables that exist in the original program (name tables, default lists,
+constants, and a few middleware tables) are declared in the decomp but not defined, because the decomp's goal
 is matching functions. They are game content and cannot be stored in this
 repository. Milestone 2 decides between writing them in the decomp and generating
 them at build time from the player's own copy.

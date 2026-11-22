@@ -10,7 +10,7 @@ passes on a clean checkout, not before.
 |---|---|---|---|
 | 0 | Foundations | Clean checkout configures, builds and reports whether game data is present | In progress |
 | 1 | Compiles | Every decomp source file compiles to object code on the host | Exit test passes: 1,524 of 1,524 |
-| 2 | Links | One executable links with no undefined symbols | 691 undefined |
+| 2 | Links | One executable links with no undefined symbols | 263 undefined (from 691) |
 | 3 | Boots without a window | Startup runs to the main menu state with data loaded | Not started |
 | 4 | First frame | Main menu drawn in a window | Not started |
 | 5 | In game | Create a hero, enter the first area, move and fight | Not started |
@@ -45,20 +45,23 @@ accepted 1,296.
 
 ## 2. Links
 
-Meter: `python3 tools/link_probe.py`. Baseline on 2026-11-22: 691 undefined
-symbols, none defined twice.
+Meter: `python3 tools/link_probe.py`. 691 undefined symbols on the first attempt
+(2026-11-22), 263 after stand-ins for the SDK and FMOD. None defined twice.
 
-| Missing | Count | What it needs |
+| Still missing | Count | What it needs |
 |---|---:|---|
-| Switch SDK functions (`nn::...`) | about 290 | `src/nn/`: each one exists; unimplemented ones stop the program and print their name |
-| Game data tables (in the original, not yet written in the decomp) | 211 | See below |
-| FMOD audio functions | 74 | The decomp has FMOD's headers only, no source. See open decisions |
-| Everything else | about 115 | Individual game and middleware functions or variables, curl and protobuf pieces, the four mutex functions for the physics library, `main` |
+| Data that exists in the original but is not defined in the decomp | 238 | See below. About 224 are the game's (name tables, default lists, constants); the rest belong to middleware (PCRE tables, LibTomCrypt descriptors) |
+| Functions | 14 | 9 in the game, 5 in middleware: write or stand in for each |
+| Variables the decomp declares but never defines (static class members) | 9 | Define them |
+| `main`, `stdin` | 2 | Join the host program to the game; one libc name curl expects |
 
-- [ ] `src/nn/`: stubs for every SDK function, generated from the undefined list
-- [ ] Game data tables: 211 variables such as name tables and default lists exist in the original program but have no definition in the decomp. Either write them in the decomp, or generate them at build time from the player's own copy of the program. They are game content, so they cannot be stored here
-- [ ] FMOD: stand-in functions for now
-- [ ] The remaining individual symbols, one by one
+- [x] Stand-ins for every SDK function the game calls: 350 across 28 SDK areas (`src/nn/<area>/unimplemented.c`). Each stops the program and prints its own name
+- [x] Stand-ins for the 74 FMOD functions (`src/audio/`) and 3 graphics-driver entry points (`src/gfx/`)
+- [x] `tools/gen_stubs.py` adds stand-ins from the link probe's results and never re-adds a symbol once it is defined
+- [x] The four mutex functions the physics library needs, implemented for real (`src/libc/nnmusl_mutex.c`)
+- [ ] The 238 data definitions. They are game content, so they cannot be stored here: write them in the decomp, or generate them at build time from the player's own copy of the program
+- [ ] The 14 functions and 9 variables, one by one
+- [ ] `main`: build one `d3` executable from the game, middleware and platform layer
 - [ ] The 8 functions the decomp has not written: write or stand in for each
 
 ## 3. Boots without a window
@@ -123,7 +126,7 @@ symbols, none defined twice.
 | Decision | Needed by | Leaning |
 |---|---|---|
 | How the decomp is pinned | Milestone 0 | Submodule at a fixed commit |
-| Where the 211 missing data tables come from | Milestone 2 | Write them in the decomp where the debug info gives their type; extract the rest from the player's copy |
+| Where the 238 missing data definitions come from | Milestone 2 | Write them in the decomp where the debug info gives their type; extract the rest from the player's copy |
 | Audio: FMOD's own macOS library (the player downloads it) or a replacement for the 74 functions used | Milestone 6 | Undecided |
 | Graphics backend approach | Milestone 4 | New backend (A) |
 | Graphics API on macOS | Milestone 4 | Metal directly, or a portable layer to ease milestone 9 |

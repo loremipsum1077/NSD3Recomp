@@ -7,11 +7,12 @@ symbols defined more than once. Build the objects first:
 
     cmake --build build/macos --target d3_game d3_middleware -- -k 0
     python3 tools/link_probe.py
+    python3 tools/gen_stubs.py                    # stand-ins for missing SDK functions
     python3 tools/link_probe.py --list nn::fs     # every missing symbol in a group
 
-Results go to build/probe/ (undefined.txt, link_summary.json).
+Results go to build/probe/ (undefined_symbols.tsv, undefined.txt, link_summary.json).
 """
-import argparse, collections, json, re, subprocess, sys
+import argparse, collections, json, re, shutil, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +33,14 @@ def main():
     ap.add_argument("--build", default=str(ROOT / "build/macos"))
     ap.add_argument("--list", help="print every undefined symbol whose group contains this text")
     a = ap.parse_args()
-    objs = sorted(str(p) for t in ("d3_game", "d3_middleware")
+    # The platform layer is small: rebuild it from nothing so that objects of deleted
+    # source files cannot linger and hide a missing symbol.
+    shutil.rmtree(Path(a.build) / "CMakeFiles/d3_platform.dir", ignore_errors=True)
+    subprocess.run(["cmake", a.build], capture_output=True)
+    b = subprocess.run(["cmake", "--build", a.build, "--target", "d3_platform"], capture_output=True, text=True)
+    if b.returncode:
+        sys.exit("platform layer failed to build:\n" + b.stdout[-3000:])
+    objs = sorted(str(p) for t in ("d3_game", "d3_middleware", "d3_platform")
                   for p in (Path(a.build) / "CMakeFiles" / f"{t}.dir").rglob("*.o"))
     if not objs:
         sys.exit("no objects: build d3_game and d3_middleware first")
@@ -49,14 +57,25 @@ def main():
         m = re.match(r"duplicate symbol '(.+)' in:", line)
         if m:
             duplicate.append(m.group(1))
-    dem = subprocess.run(["c++filt"], input="\n".join(undefined), capture_output=True, text=True).stdout.splitlines()
+    # The linker prints readable names. Recover the linker names from the objects:
+    # every symbol some object needs, kept if the linker reported it missing.
+    need = set()
+    for i in range(0, len(objs), 200):
+        nm = subprocess.run(["nm", "-u", "-j"] + objs[i:i + 200], capture_output=True, text=True).stdout
+        need.update(l for l in nm.splitlines() if l.startswith("_"))
+    need = sorted(need)
+    pretty = subprocess.run(["c++filt"], input="\n".join(need), capture_output=True, text=True).stdout.splitlines()
+    reported = set(undefined)
+    missing = [(m[1:], p) for m, p in zip(need, pretty) if p in reported or m in reported]
+    (out / "undefined_symbols.tsv").write_text("".join(f"{m}\t{p}\n" for m, p in missing))
+    dem = [p for _, p in missing]
     groups = collections.defaultdict(list)
     for n in dem:
         groups[group(n)].append(n)
     (out / "undefined.txt").write_text("\n".join(sorted(dem)) + "\n")
     (out / "link_stderr.txt").write_text(r.stderr)
     print(f"{len(objs)} objects; link {'succeeded' if r.returncode == 0 else 'failed'}")
-    print(f"{len(undefined)} undefined symbols, {len(duplicate)} defined more than once")
+    print(f"{len(missing)} undefined symbols, {len(duplicate)} defined more than once")
     for g, v in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         print(f"  {len(v):5}  {g}")
         if a.list and a.list in g:
@@ -64,7 +83,7 @@ def main():
                 print("           ", n[:150])
     for d in duplicate[:20]:
         print("  duplicate:", d)
-    json.dump({"objects": len(objs), "undefined": len(undefined), "duplicate": duplicate,
+    json.dump({"objects": len(objs), "undefined": len(missing), "duplicate": duplicate,
                "groups": {g: len(v) for g, v in groups.items()}}, (out / "link_summary.json").open("w"), indent=1)
 
 
