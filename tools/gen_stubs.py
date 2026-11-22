@@ -27,6 +27,10 @@ def target(mangled, pretty):
     for prefix, area in C_AREAS:
         if re.match(prefix + r"[A-Z]", mangled):
             return f"src/nn/{area}/unimplemented.c"
+    # Everything else that is a function: called by our build of the decomp but defined
+    # nowhere. (Missing data is handled by tools/extract_data.py, which runs first.)
+    if mangled != "main" and not pretty.startswith(("vtable for", "typeinfo")) and ("(" in pretty or "::" not in pretty):
+        return "src/replace/unimplemented.c"
     return None
 
 

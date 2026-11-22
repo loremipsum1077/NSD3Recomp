@@ -1,0 +1,27 @@
+// Functions not implemented yet. Each stops the program and prints its name.
+// Added by tools/gen_stubs.py; delete a line when the real function is written.
+#include "host/unimplemented.h"
+
+D3_STUB(_ZN13ActorMovement12UpdateFacingEv, "ActorMovement::UpdateFacing()")
+D3_STUB(_ZNK8Blizzard4Jobs3Job7IsReadyEv, "Blizzard::Jobs::Job::IsReady() const")
+D3_STUB(_ZN21ComplexTypeDescriptor19ValidateDescriptorsERK13XGrowableListIPKS_S2_E, "ComplexTypeDescriptor::ValidateDescriptors(XGrowableList<ComplexTypeDescriptor const*, ComplexTypeDescriptor const*> const&)")
+D3_STUB(_ZN7Console11GameNetwork10ConnectionD2Ev, "Console::GameNetwork::Connection::~Connection()")
+D3_STUB(_ZNK15NavZoneInstance11GetSceneDefEv, "NavZoneInstance::GetSceneDef() const")
+D3_STUB(_ZN11UIInventory7Console21CosmeticItemsProvider11CleanupACDsEv, "UIInventory::Console::CosmeticItemsProvider::CleanupACDs()")
+D3_STUB(_ZN11UIInventory7Console14CrafterRecipes11CleanupACDsEv, "UIInventory::Console::CrafterRecipes::CleanupACDs()")
+D3_STUB(_ZNK11UIInventory7Console19RecipeItemsProvider14GetIndexOfItemE5ACDID, "UIInventory::Console::RecipeItemsProvider::GetIndexOfItem(ACDID) const")
+D3_STUB(_ZNK11UIInventory7Console19RecipeItemsProvider15GetProviderTypeEv, "UIInventory::Console::RecipeItemsProvider::GetProviderType() const")
+D3_STUB(Curl_memdup, "_Curl_memdup")
+D3_STUB(Curl_nnssl_connect, "_Curl_nnssl_connect")
+D3_STUB(Curl_nnssl_shutdown, "_Curl_nnssl_shutdown")
+D3_STUB(Curl_poll, "_Curl_poll")
+D3_STUB(lua_atpanic, "_lua_atpanic")
+D3_STUB(vorbis_lpc_from_data, "_vorbis_lpc_from_data")
+D3_STUB(vorbis_lpc_predict, "_vorbis_lpc_predict")
+D3_STUB(_ZN21bdDownloadInterceptor19handleContentLengthEjb, "bdDownloadInterceptor::handleContentLength(unsigned int, bool)")
+D3_STUB(_ZN32bdObjectStoreDownloadInterceptor14handleDownloadEPvj, "bdObjectStoreDownloadInterceptor::handleDownload(void*, unsigned int)")
+D3_STUB(_ZNK6google8protobuf12UnknownField36SerializeLengthDelimitedNoTagToArrayEPh, "google::protobuf::UnknownField::SerializeLengthDelimitedNoTagToArray(unsigned char*) const")
+D3_STUB(_ZN6google8protobuf8internal14WireFormatLite9SkipFieldEPNS0_2io16CodedInputStreamEj, "google::protobuf::internal::WireFormatLite::SkipField(google::protobuf::io::CodedInputStream*, unsigned int)")
+D3_STUB(_ZN6google8protobuf8internal14WireFormatLite9SkipFieldEPNS0_2io16CodedInputStreamEjPNS3_17CodedOutputStreamE, "google::protobuf::internal::WireFormatLite::SkipField(google::protobuf::io::CodedInputStream*, unsigned int, google::protobuf::io::CodedOutputStream*)")
+D3_STUB(_ZN6google8protobuf8internal14WireFormatLite11SkipMessageEPNS0_2io16CodedInputStreamE, "google::protobuf::internal::WireFormatLite::SkipMessage(google::protobuf::io::CodedInputStream*)")
+D3_STUB(_ZN6google8protobuf8internal14WireFormatLite11SkipMessageEPNS0_2io16CodedInputStreamEPNS3_17CodedOutputStreamE, "google::protobuf::internal::WireFormatLite::SkipMessage(google::protobuf::io::CodedInputStream*, google::protobuf::io::CodedOutputStream*)")

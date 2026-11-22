@@ -4,8 +4,9 @@ A native port of **Diablo III 2.6.2 (Nintendo Switch)**, built by recompiling th
 decompiled source from [NSD3Decomp](https://github.com/loremipsum1077/NSD3Decomp)
 for desktop platforms. macOS on Apple silicon is the first target.
 
-**Status: the game does not run yet.** Every source file of the decomp compiles
-for macOS; linking is the current milestone (263 undefined symbols, down from 691). See the [roadmap](docs/ROADMAP.md).
+**Status: the game does not run yet.** The decomp compiles and links into one
+macOS executable. It stops at startup, at the first Switch system function that
+has not been implemented. See the [roadmap](docs/ROADMAP.md).
 
 ## What is and is not in this repository
 
@@ -33,7 +34,9 @@ decompiled game source also stays in its own repository and is referenced by pat
 
 1. Check out NSD3Decomp next to this repository (`../NSD3Decomp`), or point
    `D3_DECOMP_DIR` at it.
-2. Put the RomFS contents of your own Diablo III 2.6.2 dump in `game/romfs/`.
+2. Put your own Diablo III 2.6.2 dump in `game/`: the program in `game/exefs/`
+   (`main`) and the RomFS contents in `game/romfs/` (including
+   `DiabloIIINX64r.nss`). The build reads both.
 3. Build:
 
 ```sh

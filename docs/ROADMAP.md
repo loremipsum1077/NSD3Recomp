@@ -10,8 +10,8 @@ passes on a clean checkout, not before.
 |---|---|---|---|
 | 0 | Foundations | Clean checkout configures, builds and reports whether game data is present | In progress |
 | 1 | Compiles | Every decomp source file compiles to object code on the host | Exit test passes: 1,524 of 1,524 |
-| 2 | Links | One executable links with no undefined symbols | 263 undefined (from 691) |
-| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Not started |
+| 2 | Links | One executable links with no undefined symbols | Exit test passes |
+| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Stops at the first SDK call (`nn::os::InitializeMutex`) |
 | 4 | First frame | Main menu drawn in a window | Not started |
 | 5 | In game | Create a hero, enter the first area, move and fight | Not started |
 | 6 | Sound | Music, effects and voice play | Not started |
@@ -46,23 +46,25 @@ accepted 1,296.
 ## 2. Links
 
 Meter: `python3 tools/link_probe.py`. 691 undefined symbols on the first attempt
-(2026-11-22), 263 after stand-ins for the SDK and FMOD. None defined twice.
+(2026-11-22), none now: `build/macos/d3` links (22.8 MB). Run, it stops inside the
+game's static initialisers at the first SDK function that is still a stand-in.
 
-| Still missing | Count | What it needs |
+How the 691 were resolved:
+
+| What | Count | Where |
 |---|---:|---|
-| Data that exists in the original but is not defined in the decomp | 238 | See below. About 224 are the game's (name tables, default lists, constants); the rest belong to middleware (PCRE tables, LibTomCrypt descriptors) |
-| Functions | 14 | 9 in the game, 5 in middleware: write or stand in for each |
-| Variables the decomp declares but never defines (static class members) | 9 | Define them |
-| `main`, `stdin` | 2 | Join the host program to the game; one libc name curl expects |
+| Switch SDK functions: stand-ins that stop and print their name | 350 | `src/nn/<area>/unimplemented.c` |
+| FMOD functions and graphics-driver entry points: stand-ins | 77 | `src/audio/`, `src/gfx/` |
+| Data the decomp does not define: generated from the player's dump | 286 | `tools/extract_data.py`, list in `config/extract_symbols.txt` |
+| Functions our build calls that no source defines: stand-ins | 23 | `src/replace/unimplemented.c` |
+| Real implementations | 13 | Physics mutex (4), `__errno_location`, `stdin`, protobuf's field skippers (7) |
 
-- [x] Stand-ins for every SDK function the game calls: 350 across 28 SDK areas (`src/nn/<area>/unimplemented.c`). Each stops the program and prints its own name
-- [x] Stand-ins for the 74 FMOD functions (`src/audio/`) and 3 graphics-driver entry points (`src/gfx/`)
 - [x] `tools/gen_stubs.py` adds stand-ins from the link probe's results and never re-adds a symbol once it is defined
-- [x] The four mutex functions the physics library needs, implemented for real (`src/libc/nnmusl_mutex.c`)
-- [ ] The 238 data definitions. They are game content, so they cannot be stored here: write them in the decomp, or generate them at build time from the player's own copy of the program
-- [ ] The 14 functions and 9 variables, one by one
-- [ ] `main`: build one `d3` executable from the game, middleware and platform layer
-- [ ] The 8 functions the decomp has not written: write or stand in for each
+- [x] `tools/extract_data.py` writes typed-less C definitions (bytes, with pointers turned into string literals or symbol references) into the build directory; verified byte-for-byte against the decomp's copy of the program
+- [x] One `d3` executable from the game, middleware, platform layer, gap-fillers and extracted data
+- [ ] Extracted data is a stopgap. The decomp should define these 286 symbols as real source (work in progress in NSD3Decomp); remove each from `config/extract_symbols.txt` when it does
+- [ ] Known weakness of the stopgap: 208 pointers lead to data that is private to one source file in the original. The extractor gives each table its own copy. If the game also has that variable and changes it at run time, the table will not see the change
+- [ ] The 23 functions in `src/replace/unimplemented.c`: find out for each whether it is reachable, and get it written in the decomp if so
 
 ## 3. Boots without a window
 

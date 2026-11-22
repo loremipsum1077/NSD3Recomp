@@ -43,7 +43,8 @@ anything, so only what exists is in the repository.
 | `src/libc/` | Pieces of the Switch's C library that the source depends on by layout or name | 2 |
 | `src/gfx/` | The renderer (see Graphics below) | 4 |
 | `src/audio/` | Audio: route to be decided (see FMOD below) | 6 |
-| `src/replace/` | Replacements for decomp files excluded from the build | as needed |
+| `src/replace/` | Gap-fillers for things the decomp lacks; each goes away when the decomp has the real thing | 2 |
+| `config/` | Lists that drive the tools (names only, no content) | 2 |
 | `tools/` | Progress meters, game-data verification | all |
 | `tests/` | Tests of the platform layer | 2 onward |
 
@@ -99,13 +100,15 @@ itself is part of the 2,191 functions without source. The game calls 74 FMOD
 functions. They must come from FMOD's own macOS library, which each person would
 download themselves, or from a replacement written here.
 
-## Game data tables
+## Data the decomp does not define
 
-238 variables that exist in the original program (name tables, default lists,
-constants, and a few middleware tables) are declared in the decomp but not defined, because the decomp's goal
-is matching functions. They are game content and cannot be stored in this
-repository. Milestone 2 decides between writing them in the decomp and generating
-them at build time from the player's own copy.
+286 variables that exist in the original program (name tables, tag tables,
+constants, a few middleware tables) are declared in the decomp but not defined,
+because the decomp tracks functions. They are game content and cannot be stored
+here. `tools/extract_data.py` generates C definitions for them at build time from
+the player's dump: each becomes a block of bytes in which every pointer is a
+string literal or a reference to another symbol. This is a stopgap until the
+decomp defines them as real source.
 
 ## How the decomp is made to compile on the host
 

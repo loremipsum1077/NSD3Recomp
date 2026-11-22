@@ -6,22 +6,53 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/Decomp.cmake)
-# Targets d3_game and d3_middleware: the decomp's sources. Not part of the default
-# build until they all compile (milestone 1): build them with
-#   cmake --build build/macos --target d3_game d3_middleware -- -k 0
+# Targets d3_game and d3_middleware: the decomp's sources.
 include(cmake/DecompSources.cmake)
 
 # Where the game's data is read from by default. Never inside version control.
 set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game" CACHE PATH "Folder holding the user's own game dump")
 
-# The host program. Today it only locates the game folder; the decomp's sources
-# and the platform layer are added to it milestone by milestone (docs/ROADMAP.md).
-add_executable(d3 src/host/main.cpp)
-target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}")
+# The host program is defined at the end of this file, once every part exists.
 
 # The platform layer: everything that replaces the Switch underneath the game.
 file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
     src/nn/*.c src/nn/*.cpp src/gfx/*.c src/gfx/*.cpp src/audio/*.c src/audio/*.cpp
-    src/libc/*.c src/host/unimplemented.c)
+    src/libc/*.c src/replace/*.c src/host/unimplemented.c)
 add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES})
 target_include_directories(d3_platform PRIVATE src)
+
+# Data that exists in the original program but that the decomp does not define yet,
+# written out as C from the player's own dump. The output is game content and stays
+# in the build directory.
+set(D3_EXTRACTED "${CMAKE_BINARY_DIR}/generated/extracted_data.c")
+if(EXISTS "${D3_GAME_DIR}/exefs/main" AND EXISTS "${D3_GAME_DIR}/romfs/DiabloIIINX64r.nss")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_custom_command(OUTPUT "${D3_EXTRACTED}"
+        COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/tools/extract_data.py"
+                --game "${D3_GAME_DIR}" --out "${D3_EXTRACTED}"
+        DEPENDS tools/extract_data.py config/extract_symbols.txt "${D3_GAME_DIR}/exefs/main"
+        COMMENT "Extracting data definitions from the game dump")
+    add_library(d3_extracted OBJECT "${D3_EXTRACTED}")
+    target_compile_options(d3_extracted PRIVATE -w)
+else()
+    message(STATUS "No game dump in ${D3_GAME_DIR}: extracted data definitions are not built")
+endif()
+
+# Gap-fillers written against the decomp's own headers (src/replace/README.md).
+file(GLOB D3_REPLACE_SOURCES CONFIGURE_DEPENDS src/replace/*.cc src/replace/*.cpp)
+add_library(d3_replace OBJECT ${D3_REPLACE_SOURCES})
+target_link_libraries(d3_replace PRIVATE d3_decomp_flags)
+target_compile_options(d3_replace PRIVATE -funsigned-char)   # protobuf's setting
+
+# The program: host entry point + game + middleware + platform layer + gap-fillers
+# + data extracted from the dump. Without a dump it cannot link, so it is only
+# defined when one is present; d3_check then still reports what is missing.
+add_executable(d3_check src/host/main.cpp)
+target_compile_definitions(d3_check PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}")
+if(TARGET d3_extracted)
+    add_executable(d3 src/host/main.cpp
+        $<TARGET_OBJECTS:d3_game> $<TARGET_OBJECTS:d3_middleware> $<TARGET_OBJECTS:d3_platform>
+        $<TARGET_OBJECTS:d3_replace> $<TARGET_OBJECTS:d3_extracted>)
+    target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}")
+    set_target_properties(d3_game d3_middleware PROPERTIES EXCLUDE_FROM_ALL OFF)
+endif()

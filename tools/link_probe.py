@@ -37,10 +37,12 @@ def main():
     # source files cannot linger and hide a missing symbol.
     shutil.rmtree(Path(a.build) / "CMakeFiles/d3_platform.dir", ignore_errors=True)
     subprocess.run(["cmake", a.build], capture_output=True)
-    b = subprocess.run(["cmake", "--build", a.build, "--target", "d3_platform"], capture_output=True, text=True)
+    targets = ["d3_platform", "d3_replace"] + (["d3_extracted"] if (Path(a.build) / "CMakeFiles/d3_extracted.dir").parent.is_dir()
+                                 and "d3_extracted" in (Path(a.build) / "build.ninja").read_text() else [])
+    b = subprocess.run(["cmake", "--build", a.build, "--target"] + targets, capture_output=True, text=True)
     if b.returncode:
         sys.exit("platform layer failed to build:\n" + b.stdout[-3000:])
-    objs = sorted(str(p) for t in ("d3_game", "d3_middleware", "d3_platform")
+    objs = sorted(str(p) for t in ("d3_game", "d3_middleware", "d3_platform", "d3_replace", "d3_extracted")
                   for p in (Path(a.build) / "CMakeFiles" / f"{t}.dir").rglob("*.o"))
     if not objs:
         sys.exit("no objects: build d3_game and d3_middleware first")
