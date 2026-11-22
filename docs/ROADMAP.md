@@ -102,7 +102,8 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Scripted input for testing without a person: `D3_INPUT_SCRIPT="5:A 8:PLUS"`; `D3_INPUT_TRACE=1` prints button changes
 - [x] Investigate shaders: no source in the data, only Switch GPU code plus a complete reflection table; they must be translated ([findings](SHADERS.md))
 - [x] Obtain the GPU instruction encoding: envytools' table, MIT-licensed; 43 instruction types cover the start-up shaders (`tools/shader_stats.py`)
-- [ ] Shader translator, stage 1: disassemble every shader to readable text using the reflection names
+- [x] Shader translator, stage 1: every shader disassembles to readable text with reflection names (`tools/shader_disasm.py`); control flow is forward-only except two loops
+- [ ] Establish what the driver-supplied constant block `c[1]` holds
 - [ ] Stage 2: recover structure (if/else, discard) and emit host shading language; every shader must compile
 - [ ] Stage 3: check translated shaders by drawing with them
 - [ ] Choose backend approach A or B by counting required functions. The do-nothing driver shows the game uses roughly 150 of the 498 entry points during startup and the first frames

@@ -70,21 +70,58 @@ This favours approach A, or B with one extra hook at shader creation.
 ## The reference
 
 The Switch's GPU belongs to NVIDIA's GM107 ("Maxwell") family. The instruction
-table used here is from envytools (`envydis/gm107.c`), an MIT-licensed
-reverse-engineering project, downloaded with the owner's permission into
-`extern/reference/`, which git ignores. It gives each instruction's bit pattern,
-name and operand fields. It does not describe the 0x50-byte program header or the
-control block.
+table is from envytools (`envydis/gm107.c`), an MIT-licensed reverse-engineering
+project, downloaded with the owner's permission. `tools/gen_gm107_table.py`
+converts it to `src/shader/gm107.json`, which is committed together with the
+licence text (`src/shader/LICENSE-envytools`); the tools read only that. The table
+gives each instruction's bit pattern, name and operand fields. It does not describe
+the 0x50-byte program header or the control block.
+
+## Reading a shader
+
+`python3 tools/shader_disasm.py FILE.glslc` prints a shader as text, with the
+reflection names beside the instructions that use them. A typical pixel shader
+reads as: divide by depth, interpolate each input, sample the textures, compare
+against `CBMain.alphaTestRef` and discard, multiply by the vertex colour, write the
+result.
+
+Three conventions connect the code to the reflection table. They are not in the
+instruction reference; `--summary` checks them against every captured shader:
+
+| Convention | Check over 1,010 shaders |
+|---|---|
+| Input at location L is `a[0x80 + 16*L]`; position is `a[0x70]` | All 633 vertex shaders read only inputs they declare |
+| Constant block with binding B is `c[B + 3]` | 95,166 of 96,798 constant reads resolve to a named constant; the rest are `c[1]` (below) |
+| Texture handle H is the sampler with binding `(H - 8) / 2` | All 1,085 texture reads resolve to a named sampler |
+
+## Control flow
+
+- 432 of 1,010 shaders have no branch at all.
+- Every other branch but two goes forward: 3,070 forward branches, almost all
+  conditional. The game's lighting loop ("for each of up to 16 lights") was unrolled
+  by the original compiler into sixteen "if fewer lights than this, skip to the end"
+  tests.
+- Two branches in the whole set go backward inside a shader body: two real loops.
+- The backward branch that ends every shader is a stop-here loop after `exit`, not
+  part of the program.
+
+So the translator needs forward-only structure recovery plus a general fallback for
+the two loops.
 
 ## Open questions
 
-- The program header (which inputs and outputs a shader uses) and the control block
-  have not been decoded. The reference does not cover them; the reflection table
-  may make them unnecessary.
+- **`c[1]`.** 1,632 constant reads use block `c[1]`, which the game does not declare:
+  it is supplied by the Switch's graphics driver. Vertex shaders multiply the output
+  position by `c[1][0]`. What the driver puts there has to be established before any
+  translated vertex shader can be trusted.
+- The program header and the control block have not been decoded.
+- 3,946 constant reads use a computed offset (arrays such as bone matrices); they
+  decode, but are not yet tied to names.
 - Shaders loaded after start-up have not been looked at; an area may use
-  instructions the start-up set does not. `tools/shader_stats.py` will show any.
-- Branches: 3,975 `bra` in 1,312 shaders. How many are plain if/else and how many
-  are loops decides how much control-flow recovery the translator needs.
+  instructions the start-up set does not.
+- Only 1,010 of the 1,678 start-up shaders were captured whole (a flaw in the one-off
+  capture). The instruction statistics cover all of them; the naming checks cover
+  the 1,010.
 
 ## Reproducing
 

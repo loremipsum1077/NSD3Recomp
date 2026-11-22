@@ -4,31 +4,19 @@
     D3_SHADER_DUMP=build/shaders build/macos/d3      # run for a while, then quit
     python3 tools/shader_stats.py build/shaders
 
-Instruction names come from the envytools table (extern/reference/envytools/gm107.c,
-see extern/reference/README.md). Each dumped .code file is a 0x30-byte wrapper, an
+Decoding is by tools/gm107.py. Each dumped .code file is a 0x30-byte wrapper, an
 0x50-byte shader program header, then 64-bit instructions in groups of four where
 the first word of each group is a scheduling word, not an instruction.
 """
-import collections, glob, hashlib, re, struct, sys
+import collections, hashlib, sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def table():
-    src = (ROOT / "extern/reference/envytools/gm107.c").read_text()
-    body = src[src.index("static struct insn tabroot[]"):]
-    body = body[:body.index("\n};")]
-    out = []
-    for m in re.finditer(r"\{\s*(0x[0-9a-f]+)ull,\s*(0x[0-9a-f]+)ull,\s*OP8B,(.*)", body):
-        names = re.findall(r'N\(\s*"(\w+)"\)', m.group(3))
-        out.append((int(m.group(1), 16), int(m.group(2), 16), " ".join(names) or "?"))
-    return out
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gm107
 
 
 def main():
     folder = Path(sys.argv[1])
-    tab = table()
     seen, ops, per_op_shaders = {}, collections.Counter(), collections.Counter()
     unknown = collections.Counter()
     for f in sorted(folder.glob("*.code")):
@@ -36,22 +24,17 @@ def main():
         seen.setdefault(hashlib.md5(b).hexdigest(), b)
     total = 0
     for b in seen.values():
-        ins = b[0x30 + 0x50:]
         used = set()
-        for i in range(0, len(ins) - 7, 8):
-            if (i // 8) % 4 == 0:
-                continue
-            w, = struct.unpack_from("<Q", ins, i)
-            if w == 0:
+        for pc, word, tokens in gm107.instructions(b):
+            if word == 0:
                 continue
             total += 1
-            for value, mask, name in tab:
-                if w & mask == value:
-                    ops[name] += 1
-                    used.add(name)
-                    break
-            else:
-                unknown[w >> 48] += 1
+            if tokens is None:
+                unknown[word >> 48] += 1
+                continue
+            name = gm107.mnemonic(tokens)
+            ops[name] += 1
+            used.add(name)
         for n in used:
             per_op_shaders[n] += 1
     print(f"{len(seen)} distinct shaders, {total} instructions, {len(ops)} different instructions, "
