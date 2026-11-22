@@ -78,14 +78,23 @@ graphics API. Two ways to replace it:
   in `src/gfx/` against the same game-side interface.
 - **B. NVN on the host.** Keep `Gfx/NX64/` and implement the NVN calls it makes.
 
-Preferred: **A**, because the game-side interface is small and already
-platform-neutral, while NVN is large. To be confirmed at milestone 4 by counting
-the functions each option requires.
+**Decided: B**, after measuring (2026-11-22). The reasons A looked better did not
+hold up:
+
+- NVN is large, but the game uses only 114 of its 498 entry points, and they map
+  closely onto Metal (builders, pools, state objects, a command stream).
+- The shader translator turned out to need only the GPU code, which the driver is
+  given; the reflection table is not required.
+- B leaves every game file untouched, which is the rule for the whole port; A would
+  mean rewriting six of the game's files against its internal interfaces.
+
+The implementation is `src/gfx/metal/nvn_metal.mm`. Anything it does not define
+falls back to the do-nothing driver in `src/gfx/null/`, which is also what runs
+with `D3_HEADLESS=1`.
 
 **Shaders have no source in the data**, only machine code for the Switch's GPU
 and a reflection table of names. They have to be translated; see
-[SHADERS.md](SHADERS.md). The reflection table is only visible above the driver
-interface, which is a further reason to prefer approach A.
+[SHADERS.md](SHADERS.md).
 
 ## Audio, physics and other middleware
 

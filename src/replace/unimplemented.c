@@ -23,3 +23,5 @@ D3_STUB(_ZN6google8protobuf8internal14WireFormatLite9SkipFieldEPNS0_2io16CodedIn
 D3_STUB(_ZN6google8protobuf8internal14WireFormatLite9SkipFieldEPNS0_2io16CodedInputStreamEjPNS3_17CodedOutputStreamE, "google::protobuf::internal::WireFormatLite::SkipField(google::protobuf::io::CodedInputStream*, unsigned int, google::protobuf::io::CodedOutputStream*)")
 D3_STUB(_ZN6google8protobuf8internal14WireFormatLite11SkipMessageEPNS0_2io16CodedInputStreamE, "google::protobuf::internal::WireFormatLite::SkipMessage(google::protobuf::io::CodedInputStream*)")
 D3_STUB(_ZN6google8protobuf8internal14WireFormatLite11SkipMessageEPNS0_2io16CodedInputStreamEPNS3_17CodedOutputStreamE, "google::protobuf::internal::WireFormatLite::SkipMessage(google::protobuf::io::CodedInputStream*, google::protobuf::io::CodedOutputStream*)")
+D3_STUB(_ZN13ActorMovement12UpdateFacingEv, "ActorMovement::UpdateFacing()")
+D3_STUB(_ZNK8Blizzard4Jobs3Job7IsReadyEv, "Blizzard::Jobs::Job::IsReady() const")

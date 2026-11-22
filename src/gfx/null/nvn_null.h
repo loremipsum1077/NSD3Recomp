@@ -18,6 +18,15 @@ extern const struct d3_nvn_entry d3_nvn_defaults[];
 // Entry points that need real behaviour, written by hand (nvn_null.cpp).
 extern const struct d3_nvn_entry d3_nvn_overrides[];
 
+// The Metal driver, when a window exists (../metal/nvn_metal.mm). Its entries take
+// precedence over everything above.
+extern const struct d3_nvn_entry d3_nvn_metal_overrides[];
+int d3_nvn_metal_start(void);
+
+// Waits so that frames are presented at the display rate (60 a second divided by the
+// interval the game asked for).
+void d3_present_pace(void);
+
 // Called by every generated function, for tracing (see D3_NVN_TRACE in nvn_null.cpp).
 void d3_nvn_called(const char * name);
 

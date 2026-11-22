@@ -33,9 +33,18 @@ void d3_nvn_called(const char * name)
     }
 }
 
+static bool g_metal;
+
 static d3_nvn_function Lookup(const void * device, const char * name)
 {
     (void)device;
+    for (const d3_nvn_entry * e = d3_nvn_metal_overrides; g_metal && e->name; e++)
+    {
+        if (strcmp(e->name, name) == 0)
+        {
+            return e->function;
+        }
+    }
     for (const d3_nvn_entry * e = d3_nvn_overrides; e->name; e++)
     {
         if (strcmp(e->name, name) == 0)
@@ -218,13 +227,9 @@ static void SetPresentInterval(void * window, int interval)
     g_presentInterval = interval < 1 ? 1 : interval;
 }
 
-static void PresentTexture(void * queue, void * window, int textureIndex)
+void d3_present_pace(void)
 {
     static uint64_t next;
-    (void)queue;
-    (void)window;
-    (void)textureIndex;
-    d3_nvn_called("nvnQueuePresentTexture");
     uint64_t now = NowNs();
     uint64_t frame = 1000000000ull / 60 * g_presentInterval;
     if (next < now || next > now + frame)
@@ -237,6 +242,15 @@ static void PresentTexture(void * queue, void * window, int textureIndex)
         nanosleep(&wait, nullptr);
     }
     next += frame;
+}
+
+static void PresentTexture(void * queue, void * window, int textureIndex)
+{
+    (void)queue;
+    (void)window;
+    (void)textureIndex;
+    d3_nvn_called("nvnQueuePresentTexture");
+    d3_present_pace();
 }
 
 const d3_nvn_entry d3_nvn_overrides[] = {
@@ -275,6 +289,12 @@ const d3_nvn_entry d3_nvn_overrides[] = {
 // The game's first call into the driver: it asks for the lookup function by name.
 extern "C" d3_nvn_function nvnBootstrapLoader(const char * name)
 {
+    static bool started;
+    if (!started)
+    {
+        started = true;
+        g_metal = d3_nvn_metal_start() != 0;
+    }
     return Lookup(nullptr, name);
 }
 

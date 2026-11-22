@@ -42,15 +42,17 @@ def main():
     b = subprocess.run(["cmake", "--build", a.build, "--target"] + targets, capture_output=True, text=True)
     if b.returncode:
         sys.exit("platform layer failed to build:\n" + b.stdout[-3000:])
-    objs = sorted(str(p) for t in ("d3_decomp", "d3_platform", "d3_replace", "d3_extracted")
-                  for p in (Path(a.build) / "CMakeFiles" / f"{t}.dir").rglob("*.o"))
-    if not objs:
-        sys.exit("no objects: build d3_decomp first")
+    # Use the program's own link command (objects, libraries and frameworks), so that
+    # nothing the real link resolves is reported as missing here.
+    cmd = subprocess.run(["ninja", "-C", a.build, "-t", "commands", "d3"], capture_output=True, text=True).stdout.strip().splitlines()
+    if not cmd:
+        sys.exit("no link command for d3: is the game dump present and the build configured?")
+    link = cmd[-1].replace("-o d3 ", "-o " + str(ROOT / "build/probe/linktest") + " ")
     out = ROOT / "build/probe"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "objects.txt").write_text("\n".join(objs) + "\n")
-    r = subprocess.run(["c++", "-Wl,-filelist," + str(out / "objects.txt"), "-o", str(out / "linktest")],
-                       capture_output=True, text=True)
+    objs = [w for w in link.split() if w.endswith(".o")]
+    objs = [w if w.startswith("/") else str(Path(a.build) / w) for w in objs]
+    r = subprocess.run(link, shell=True, cwd=a.build, capture_output=True, text=True)
     undefined, duplicate = [], []
     for line in r.stderr.splitlines():
         m = re.match(r'\s+"(.+)", referenced from:', line)

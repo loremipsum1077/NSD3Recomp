@@ -17,6 +17,7 @@
 namespace {
 
 SDL_Window * g_window;
+SDL_MetalView g_metalView;
 SDL_GameController * g_controller;
 bool g_started;
 bool g_quit;
@@ -184,10 +185,14 @@ void d3_window_create(void)
     }
     g_started = true;
     g_window = SDL_CreateWindow("Diablo III", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720,
-                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_METAL);
     if (!g_window)
     {
         fprintf(stderr, "No window: %s\n", SDL_GetError());
+    }
+    else
+    {
+        g_metalView = SDL_Metal_CreateView(g_window);
     }
     OpenFirstController();
     if (getenv("D3_INPUT_TRACE"))
@@ -195,6 +200,11 @@ void d3_window_create(void)
         fprintf(stderr, "input: window %s, controller %s\n", g_window ? "open" : "not open",
                 g_controller ? SDL_GameControllerName(g_controller) : "none (keyboard only)");
     }
+}
+
+void * d3_window_metal_layer(void)
+{
+    return g_metalView ? SDL_Metal_GetLayer(g_metalView) : nullptr;
 }
 
 int d3_window_pump(void)

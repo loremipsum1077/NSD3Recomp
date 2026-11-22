@@ -12,7 +12,7 @@ passes on a clean checkout, not before.
 | 1 | Compiles | Every decomp source file compiles to object code on the host | Exit test passes: 1,524 of 1,524 |
 | 2 | Links | One executable links with no undefined symbols | Exit test passes |
 | 3 | Boots without a window | Startup runs to the main menu state with data loaded | Runs its main loop and plays the opening videos; menu not yet confirmed |
-| 4 | First frame | Main menu drawn in a window | Window and input work; nothing is drawn yet |
+| 4 | First frame | Main menu drawn in a window | Metal driver presents frames; no draws yet, so the picture is black |
 | 5 | In game | Create a hero, enter the first area, move and fight | Not started |
 | 6 | Sound | Music, effects and voice play | Not started |
 | 7 | Keeps progress | Saves and settings survive a restart | Not started |
@@ -108,8 +108,11 @@ has not been observed: with no controller there is no way to skip them yet.
 - [ ] The 20 shaders that use instructions not handled yet (3D textures, gather, size queries, a few rare integer forms)
 - [ ] Move the translator into the program (it is a Python tool today) with an on-disk cache
 - [ ] Stage 3: check translated shaders by drawing with them
-- [ ] Choose backend approach A or B by counting required functions. The do-nothing driver shows the game uses roughly 150 of the 498 entry points during startup and the first frames
-- [ ] Swap chain on the window, textures, vertex and index buffers, render states
+- [x] Backend approach chosen: implement the driver interface on Metal (B). The game uses 114 of the 498 entry points (see architecture)
+- [x] Metal driver, part 1 (`src/gfx/metal/nvn_metal.mm`): device, the game's textures as render targets, clears, presenting to the window, screenshots (`D3_SCREENSHOT=file.png`, `D3_SCREENSHOT_FRAME=n`)
+- [ ] Part 2, draws: vertex and index data, constant blocks, pipelines built from translated shaders, blend/depth/polygon state. Nothing is visible until this exists: the game never clears the window's texture, it reaches it only by drawing
+- [ ] Part 3, textures: contents are stored in the Switch GPU's tiled layout and have to be rearranged; samplers
+- [ ] Translated shaders at run time: today the translator is a Python tool
 - [ ] UI rendering and fonts
 - [ ] Not verified: input with a real controller (none was attached), window close, and whether the game's menus respond to the keys as mapped
 
@@ -159,8 +162,8 @@ has not been observed: with no controller there is no way to skip them yet.
 | How the decomp is pinned | Milestone 0 | Submodule at a fixed commit |
 | Where the 238 missing data definitions come from | Milestone 2 | Write them in the decomp where the debug info gives their type; extract the rest from the player's copy |
 | Audio: FMOD's own macOS library (the player downloads it) or a replacement for the 74 functions used | Milestone 6 | Undecided |
-| Graphics backend approach | Milestone 4 | New backend (A); the shader findings add a reason |
-| Graphics API on macOS | Milestone 4 | Metal directly, or a portable layer to ease milestone 9 |
+| Graphics backend approach | Milestone 4 | Decided: implement the driver interface on Metal (B) |
+| Graphics API on macOS | Milestone 4 | Decided: Metal directly. Other platforms will need their own driver file |
 | Shaders: translate or rewrite | Milestone 4 | Decided: translate ([findings](SHADERS.md)) |
 | Source of the Switch GPU instruction encoding | Milestone 4 | Decided: envytools (MIT), kept in an ignored folder |
 | Window and controller library | Milestone 4 | SDL (also covers Linux and Windows) |

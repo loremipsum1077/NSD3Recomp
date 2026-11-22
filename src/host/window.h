@@ -23,6 +23,9 @@ enum {
 // Opens the window. Does nothing when D3_HEADLESS is set or no display is available.
 void d3_window_create(void);
 
+// The window's Metal layer (a CAMetalLayer), or null when there is no window.
+void * d3_window_metal_layer(void);
+
 // Handles pending window and input events. Call once per frame on the main thread.
 // Returns nonzero once the user has asked to quit (closed the window).
 int d3_window_pump(void);

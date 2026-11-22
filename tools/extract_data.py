@@ -168,8 +168,8 @@ def main():
     ap.add_argument("--game", default=str(ROOT / "game"))
     ap.add_argument("--symbols", default=str(ROOT / "config/extract_symbols.txt"))
     ap.add_argument("--out", required=True)
-    ap.add_argument("--skip-defined-in", metavar="DIR",
-                    help="directory of the decomp's compiled objects: symbols they define are skipped")
+    ap.add_argument("--skip-defined-in", metavar="FILE",
+                    help="file listing the decomp's compiled objects: symbols they define are skipped")
     ap.add_argument("--add-undefined", action="store_true",
                     help="first add still-undefined data symbols from the last link probe to the list")
     a = ap.parse_args()
@@ -197,7 +197,7 @@ def main():
     if a.skip_defined_in:
         # The decomp gains definitions over time. Whatever it defines today wins; the
         # list keeps the name in case that changes back.
-        objs = [str(p) for p in Path(a.skip_defined_in).rglob("*.o")]
+        objs = [l for l in Path(a.skip_defined_in).read_text().splitlines() if l and Path(l).is_file()]
         defined = set()
         for i in range(0, len(objs), 200):
             nm = subprocess.run(["nm", "-g", "-U", "-j"] + objs[i:i + 200], capture_output=True, text=True).stdout

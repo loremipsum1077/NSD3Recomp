@@ -49,7 +49,10 @@ reflection table stays on the game's side of that boundary. A renderer that
 replaces the game's Switch backend files (`Gfx/NX64/`, approach A in the
 architecture document) sees the whole compiled-shader file, reflection included;
 one that implements the driver interface underneath them (approach B) does not.
-This favours approach A, or B with one extra hook at shader creation.
+
+That looked like a reason to prefer A. It is not: the translator, once written,
+needs only the GPU code. The reflection names are a reading aid for people. The
+renderer therefore implements the driver interface (B).
 
 ## Instructions used
 
