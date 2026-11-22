@@ -32,7 +32,7 @@ passes on a clean checkout, not before.
 ## 1. Compiles
 
 Meters: `python3 tools/compile_probe.py` (syntax only, 30 seconds) and
-`cmake --build build/macos --target d3_game d3_middleware -- -k 0` (real compile,
+`cmake --build build/macos --target d3_decomp -- -k 0` (real compile,
 about a minute). On 2026-11-22 all 1,524 files compile. The first probe that day
 accepted 1,296.
 

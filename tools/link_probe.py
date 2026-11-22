@@ -5,7 +5,7 @@ This is the milestone-2 progress meter: the number of undefined symbols, grouped
 by where they belong (Switch SDK area, graphics, C library, other), plus any
 symbols defined more than once. Build the objects first:
 
-    cmake --build build/macos --target d3_game d3_middleware -- -k 0
+    cmake --build build/macos --target d3_decomp -- -k 0
     python3 tools/link_probe.py
     python3 tools/gen_stubs.py                    # stand-ins for missing SDK functions
     python3 tools/link_probe.py --list nn::fs     # every missing symbol in a group
@@ -37,15 +37,15 @@ def main():
     # source files cannot linger and hide a missing symbol.
     shutil.rmtree(Path(a.build) / "CMakeFiles/d3_platform.dir", ignore_errors=True)
     subprocess.run(["cmake", a.build], capture_output=True)
-    targets = ["d3_platform", "d3_replace"] + (["d3_extracted"] if (Path(a.build) / "CMakeFiles/d3_extracted.dir").parent.is_dir()
+    targets = ["d3_decomp", "d3_platform", "d3_replace"] + (["d3_extracted"] if (Path(a.build) / "CMakeFiles/d3_extracted.dir").parent.is_dir()
                                  and "d3_extracted" in (Path(a.build) / "build.ninja").read_text() else [])
     b = subprocess.run(["cmake", "--build", a.build, "--target"] + targets, capture_output=True, text=True)
     if b.returncode:
         sys.exit("platform layer failed to build:\n" + b.stdout[-3000:])
-    objs = sorted(str(p) for t in ("d3_game", "d3_middleware", "d3_platform", "d3_replace", "d3_extracted")
+    objs = sorted(str(p) for t in ("d3_decomp", "d3_platform", "d3_replace", "d3_extracted")
                   for p in (Path(a.build) / "CMakeFiles" / f"{t}.dir").rglob("*.o"))
     if not objs:
-        sys.exit("no objects: build d3_game and d3_middleware first")
+        sys.exit("no objects: build d3_decomp first")
     out = ROOT / "build/probe"
     out.mkdir(parents=True, exist_ok=True)
     (out / "objects.txt").write_text("\n".join(objs) + "\n")
@@ -76,6 +76,7 @@ def main():
         groups[group(n)].append(n)
     (out / "undefined.txt").write_text("\n".join(sorted(dem)) + "\n")
     (out / "link_stderr.txt").write_text(r.stderr)
+    (out / "duplicate_symbols.txt").write_text("".join(d + "\n" for d in duplicate))
     print(f"{len(objs)} objects; link {'succeeded' if r.returncode == 0 else 'failed'}")
     print(f"{len(missing)} undefined symbols, {len(duplicate)} defined more than once")
     for g, v in sorted(groups.items(), key=lambda kv: -len(kv[1])):

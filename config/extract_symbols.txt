@@ -1,5 +1,6 @@
 # Symbols that tools/extract_data.py defines from the player's own copy of the game.
-# Linker names, one per line. Remove a line once the decomp defines the symbol.
+# Linker names, one per line. Symbols the decomp has since defined are skipped at
+# build time, so lines never need removing.
 ACTOR_DEFAULT_EFFECT_ARCANE_CRIT_EFFECTGROUP
 ACTOR_DEFAULT_EFFECT_ARCANE_EFFECTGROUP
 ACTOR_DEFAULT_EFFECT_BATTLE_RAGE_EFFECTGROUP

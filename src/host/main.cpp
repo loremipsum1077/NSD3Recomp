@@ -1,12 +1,17 @@
-// Host entry point. For now it only finds the game folder and says what it
-// found; the game's own startup (nnMain in the decomp's MainNX64.cpp) is called
-// from here once the source links (docs/ROADMAP.md, milestone 3).
+// Host entry point: checks that the game's data is present, then runs the game's
+// own startup exactly as the Switch's runtime would.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+#ifdef D3_WITH_GAME
+extern "C" void nninitStartup();    // the game's early setup (MainNX64.cpp)
+extern "C" void nnMain();           // the game's main
+void d3_set_host_args(int argc, char ** argv);
+#endif
 
 int main(int argc, char ** argv)
 {
@@ -15,13 +20,6 @@ int main(int argc, char ** argv)
     {
         game = env;
     }
-    for (int i = 1; i + 1 < argc; i++)
-    {
-        if (std::strcmp(argv[i], "--game") == 0)
-        {
-            game = argv[i + 1];
-        }
-    }
 
     const fs::path romfs = game / "romfs";
     std::error_code ec;
@@ -29,12 +27,23 @@ int main(int argc, char ** argv)
     {
         std::fprintf(stderr,
                      "No game data at %s\n"
-                     "Put the RomFS contents of your own copy of Diablo III 2.6.2 (Switch) there,\n"
-                     "or pass --game <folder>. See README.md.\n",
+                     "Put your own dump of Diablo III 2.6.2 (Switch) there, or set D3_GAME_DIR.\n"
+                     "See README.md.\n",
                      romfs.string().c_str());
         return 1;
     }
-    std::printf("Game data: %s\n", romfs.string().c_str());
-    std::printf("The game does not start yet. See docs/ROADMAP.md for what is done.\n");
+
+#ifdef D3_WITH_GAME
+    // Arguments are passed through to the game, as the Switch's host tools do.
+    d3_set_host_args(argc, argv);
+    nninitStartup();
+    nnMain();
     return 0;
+#else
+    (void)argc;
+    (void)argv;
+    std::printf("Game data: %s\n", romfs.string().c_str());
+    std::printf("This build has no game code (no dump was present when it was configured).\n");
+    return 0;
+#endif
 }

@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/Decomp.cmake)
-# Targets d3_game and d3_middleware: the decomp's sources.
+# Target d3_decomp: the decomp's sources (game and middleware).
 include(cmake/DecompSources.cmake)
 
 # Where the game's data is read from by default. Never inside version control.
@@ -17,9 +17,10 @@ set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game" CACHE PATH "Folder holding the user
 # The platform layer: everything that replaces the Switch underneath the game.
 file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
     src/nn/*.c src/nn/*.cpp src/gfx/*.c src/gfx/*.cpp src/audio/*.c src/audio/*.cpp
-    src/libc/*.c src/replace/*.c src/host/unimplemented.c)
+    src/libc/*.c src/replace/*.c src/host/unimplemented.c src/host/crash.c)
 add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES})
 target_include_directories(d3_platform PRIVATE src)
+set_target_properties(d3_platform PROPERTIES CXX_STANDARD 17)
 
 # Data that exists in the original program but that the decomp does not define yet,
 # written out as C from the player's own dump. The output is game content and stays
@@ -30,7 +31,9 @@ if(EXISTS "${D3_GAME_DIR}/exefs/main" AND EXISTS "${D3_GAME_DIR}/romfs/DiabloIII
     add_custom_command(OUTPUT "${D3_EXTRACTED}"
         COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/tools/extract_data.py"
                 --game "${D3_GAME_DIR}" --out "${D3_EXTRACTED}"
+                --skip-defined-in "${CMAKE_BINARY_DIR}/CMakeFiles/d3_decomp.dir"
         DEPENDS tools/extract_data.py config/extract_symbols.txt "${D3_GAME_DIR}/exefs/main"
+                $<TARGET_OBJECTS:d3_decomp>
         COMMENT "Extracting data definitions from the game dump")
     add_library(d3_extracted OBJECT "${D3_EXTRACTED}")
     target_compile_options(d3_extracted PRIVATE -w)
@@ -50,9 +53,11 @@ target_compile_options(d3_replace PRIVATE -funsigned-char)   # protobuf's settin
 add_executable(d3_check src/host/main.cpp)
 target_compile_definitions(d3_check PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}")
 if(TARGET d3_extracted)
-    add_executable(d3 src/host/main.cpp
-        $<TARGET_OBJECTS:d3_game> $<TARGET_OBJECTS:d3_middleware> $<TARGET_OBJECTS:d3_platform>
+    # The platform layer is linked first so that its start-up code (the crash
+    # reporter) runs before the game's static initialisers.
+    add_executable(d3 $<TARGET_OBJECTS:d3_platform> src/host/main.cpp
+        $<TARGET_OBJECTS:d3_decomp>
         $<TARGET_OBJECTS:d3_replace> $<TARGET_OBJECTS:d3_extracted>)
-    target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}")
-    set_target_properties(d3_game d3_middleware PROPERTIES EXCLUDE_FROM_ALL OFF)
+    target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_WITH_GAME)
+    set_target_properties(d3_decomp PROPERTIES EXCLUDE_FROM_ALL OFF)
 endif()

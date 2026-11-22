@@ -58,6 +58,6 @@ most common reasons for the rest. To compile everything and count what is still
 missing at link time:
 
 ```sh
-cmake --build build/macos --target d3_game d3_middleware -- -k 0
+cmake --build build/macos --target d3_decomp -- -k 0
 python3 tools/link_probe.py
 ```
