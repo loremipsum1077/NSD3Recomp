@@ -108,6 +108,41 @@ instruction reference; `--summary` checks them against every captured shader:
 So the translator needs forward-only structure recovery plus a general fallback for
 the two loops.
 
+## The translator
+
+`python3 tools/shader_translate.py FILE.glslc` prints a shader as Metal shading
+language; `--all FOLDER OUT` translates a folder.
+
+The GPU code is a register machine, and the translation keeps that shape exactly:
+one Metal `uint` per register holding the bit pattern, one statement per
+instruction, nothing simplified. Forward branches become numbered blocks that a
+taken branch skips over; a shader with a backward branch becomes a loop around a
+`switch`. Instructions it does not handle are reported, never guessed.
+
+Result on the 1,010 captured shaders (2026-11-22):
+
+- **990 translate completely, and all 990 compile** with the system's Metal
+  framework (`tools/mslcheck.m`; Xcode's separate Metal compiler is not installed
+  on the development machine, and is not needed).
+- 20 use instructions not handled yet: 3D textures (4), two other texture forms
+  (4), texture size queries (3), gather (2), and seven rare integer or store
+  instructions used by one or two shaders each.
+
+**Compiling is not the same as being correct.** No translated shader has drawn
+anything yet. These rules were inferred, not taken from the reference, and are the
+first suspects if a picture comes out wrong:
+
+| Rule | Basis |
+|---|---|
+| A texture read writes its selected components, in order, to two register pairs | One shader read by hand, where the later uses fit |
+| `fmnmx` gives the minimum when its predicate is true, the maximum otherwise | Memory of the open-source driver's encoder |
+| `xmad` pairs are a 32-bit multiply built from two 16-bit steps | The standard pattern; only two variants occur |
+| A 64-bit constant load fills two consecutive registers | Inferred from the size flag |
+| A depth-only pixel shader returns depth in `r1`; others return colour in `r0`-`r3` | Memory of emulator behaviour; three depth-only shaders exist |
+| Range reduction before sine and exponent (`rro`) can be skipped | The host functions accept any argument |
+| A compare's second predicate output receives the opposite result | Memory; rarely used |
+| Interpolated inputs are already perspective-correct in Metal, so the shader's own multiply by depth is dropped | Reasoned from how both pipelines work |
+
 ## Open questions
 
 - **`c[1]`.** 1,632 constant reads use block `c[1]`, which the game does not declare:

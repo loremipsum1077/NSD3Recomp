@@ -104,7 +104,9 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Obtain the GPU instruction encoding: envytools' table, MIT-licensed; 43 instruction types cover the start-up shaders (`tools/shader_stats.py`)
 - [x] Shader translator, stage 1: every shader disassembles to readable text with reflection names (`tools/shader_disasm.py`); control flow is forward-only except two loops
 - [ ] Establish what the driver-supplied constant block `c[1]` holds
-- [ ] Stage 2: recover structure (if/else, discard) and emit host shading language; every shader must compile
+- [x] Stage 2: emit Metal shading language (`tools/shader_translate.py`): 990 of 1,010 captured shaders translate and all 990 compile
+- [ ] The 20 shaders that use instructions not handled yet (3D textures, gather, size queries, a few rare integer forms)
+- [ ] Move the translator into the program (it is a Python tool today) with an on-disk cache
 - [ ] Stage 3: check translated shaders by drawing with them
 - [ ] Choose backend approach A or B by counting required functions. The do-nothing driver shows the game uses roughly 150 of the 498 entry points during startup and the first frames
 - [ ] Swap chain on the window, textures, vertex and index buffers, render states
