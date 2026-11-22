@@ -1,0 +1,17 @@
+# Game content is never committed. Each person supplies their own dump here.
+/game/
+
+# Build output and local tool results
+/build/
+/out/
+compile_commands.json
+
+# Local checkout of the decomp, if not using the sibling directory
+/extern/NSD3Decomp/
+
+# Editor and OS files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+__pycache__/
