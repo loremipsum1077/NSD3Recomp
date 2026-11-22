@@ -22,4 +22,15 @@ public:
     int64_t ns;
 };
 
+namespace account {
+
+struct Uid {             // identifies a user profile; all zero is "no user"
+    uint64_t data[2];
+};
+
+struct Nickname { char name[33]; };
+struct NetworkServiceAccountId { uint64_t id; };
+
+}  // namespace account
+
 }  // namespace nn

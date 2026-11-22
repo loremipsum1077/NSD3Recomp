@@ -20,8 +20,6 @@
 #include <string>
 #include <vector>
 
-namespace nn { namespace account { struct Uid { uint64_t data[2]; }; } }
-
 namespace {
 
 // Result values the game tests for: module 2 is the file system.

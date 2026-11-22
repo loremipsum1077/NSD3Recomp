@@ -18,7 +18,14 @@ set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game" CACHE PATH "Folder holding the user
 file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
     src/nn/*.c src/nn/*.cpp src/gfx/*.c src/gfx/*.cpp src/audio/*.c src/audio/*.cpp
     src/libc/*.c src/replace/*.c src/host/unimplemented.c src/host/crash.c)
-add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES})
+# Default entry points of the do-nothing graphics driver, from the decomp's NVN header.
+set(D3_NVN_NULL "${CMAKE_BINARY_DIR}/generated/nvn_null_defaults.c")
+add_custom_command(OUTPUT "${D3_NVN_NULL}"
+    COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/gen_nvn_null.py" "${D3_DECOMP_ROOT}" "${D3_NVN_NULL}"
+    DEPENDS tools/gen_nvn_null.py "${D3_DECOMP_ROOT}/src/NintendoSDK/Include/nvn/nvn_CppFuncPtrImpl.h"
+            "${D3_DECOMP_ROOT}/src/NintendoSDK/Include/nvn/nvn_Cpp.h"
+    COMMENT "Generating the do-nothing graphics driver's entry points")
+add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES} "${D3_NVN_NULL}")
 target_include_directories(d3_platform PRIVATE src)
 # Where saves go until milestone 7 settles it. Ignored by git.
 set(D3_SAVE_DIR "${PROJECT_SOURCE_DIR}/save" CACHE PATH "Folder for save data")

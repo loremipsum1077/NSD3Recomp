@@ -11,7 +11,7 @@ passes on a clean checkout, not before.
 | 0 | Foundations | Clean checkout configures, builds and reports whether game data is present | In progress |
 | 1 | Compiles | Every decomp source file compiles to object code on the host | Exit test passes: 1,524 of 1,524 |
 | 2 | Links | One executable links with no undefined symbols | Exit test passes |
-| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Reaches graphics start-up (`GFXNX64NVN::EarlyInit`) |
+| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Runs its main loop and plays the opening videos; menu not yet confirmed |
 | 4 | First frame | Main menu drawn in a window | Not started |
 | 5 | In game | Create a hero, enter the first area, move and fight | Not started |
 | 6 | Sound | Music, effects and voice play | Not started |
@@ -68,10 +68,13 @@ How the 691 were resolved:
 
 ## 3. Boots without a window
 
-Meter: run `build/macos/d3`. It prints the first function it needs that is still a
-stand-in, with the call stack. On 2026-11-22 it runs all of the game's static
-initialisers, enters the game's `main`, mounts the data folder, and stops when
-graphics start-up asks for the Switch's graphics driver.
+Meter: run `D3_NVN_TRACE=frames build/macos/d3`. It prints a line per 60 frames
+the game presents; if it needs a function that is still a stand-in it prints the
+name and call stack and stops. On 2026-11-22 it initialises every subsystem,
+starts 28 threads, loads about 1,700 shader programs and 430 textures, and runs its
+main loop steadily (about 140 frames a second with nothing drawn). After 45
+seconds it is decoding the opening videos. Whether it then reaches the main menu
+has not been observed: with no controller there is no way to skip them yet.
 
 - [x] The game's startup (`nninitStartup`, `nnMain`) called from `src/host/main.cpp`
 - [x] `nn::os`: threads, locks, events, semaphores, reader/writer locks, thread-local slots, time, memory regions (`src/nn/os/`)
@@ -81,11 +84,13 @@ graphics start-up asks for the Switch's graphics driver.
 - [x] Static initialisers run in the original program's order (`tools/link_order.py`)
 - [x] The Switch libc's 32-byte mutex, for the three libraries that embed one (`src/libc/nnmusl_mutex.c`)
 - [x] Crash reporter: what happened, registers and call stack (`src/host/crash.c`)
-- [ ] A graphics driver that accepts every call and does nothing: the game asks the Switch's driver for about 490 entry points by name (`nvnBootstrapLoader`)
-- [ ] Audio that accepts every call and does nothing (74 FMOD functions)
-- [ ] `nn::account`: one fixed local user
-- [ ] `nn::hid`: report no controllers, then real ones
-- [ ] Network, wireless, amiibo, friends: report unavailable cleanly instead of stopping
+- [x] A graphics driver that draws nothing (`src/gfx/null/`): 498 entry points generated from the decomp's header, with real behaviour only where the game depends on an answer (memory pools, buffers, counters, events, frame acquisition)
+- [x] Audio: every FMOD function reports "no sound device", which the game accepts (`src/audio/fmod_off.c`)
+- [x] `nn::account`: one fixed local user with no network account
+- [x] `nn::hid`: no controller connected
+- [x] Network interface, wireless, amiibo, friends, add-on content, parental controls: report unavailable or empty
+- [ ] Confirm the main menu is reached: needs either a controller press to skip the videos, or a way to read the game's state from outside
+- [ ] 116 stand-ins remain (sockets and TLS, on-screen keyboard, web pages, shop, error dialogs, 23 game functions with no source). None is reached during startup
 - [ ] Not yet verified: none of the new `nn::os` or `nn::fs` code has tests, and only the paths startup has reached so far have run at all
 
 ## 4. First frame
