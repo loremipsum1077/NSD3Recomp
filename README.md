@@ -5,8 +5,8 @@ decompiled source from [NSD3Decomp](https://github.com/loremipsum1077/NSD3Decomp
 for desktop platforms. macOS on Apple silicon is the first target.
 
 **Status: the game does not run yet.** The decomp compiles and links into one
-macOS executable. It stops at startup, at the first Switch system function that
-has not been implemented. See the [roadmap](docs/ROADMAP.md).
+macOS executable. It starts, loads its data folder, and stops when graphics
+start-up asks for the Switch's graphics driver, which does not exist yet. See the [roadmap](docs/ROADMAP.md).
 
 ## What is and is not in this repository
 

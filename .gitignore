@@ -1,6 +1,9 @@
 # Game content is never committed. Each person supplies their own dump here.
 /game/
 
+# Save data written by the port
+/save/
+
 # Build output and local tool results
 /build/
 /out/

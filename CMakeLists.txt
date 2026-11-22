@@ -20,6 +20,9 @@ file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
     src/libc/*.c src/replace/*.c src/host/unimplemented.c src/host/crash.c)
 add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES})
 target_include_directories(d3_platform PRIVATE src)
+# Where saves go until milestone 7 settles it. Ignored by git.
+set(D3_SAVE_DIR "${PROJECT_SOURCE_DIR}/save" CACHE PATH "Folder for save data")
+target_compile_definitions(d3_platform PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_DEFAULT_SAVE_DIR="${D3_SAVE_DIR}")
 set_target_properties(d3_platform PROPERTIES CXX_STANDARD 17)
 
 # Data that exists in the original program but that the decomp does not define yet,

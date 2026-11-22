@@ -11,7 +11,7 @@ passes on a clean checkout, not before.
 | 0 | Foundations | Clean checkout configures, builds and reports whether game data is present | In progress |
 | 1 | Compiles | Every decomp source file compiles to object code on the host | Exit test passes: 1,524 of 1,524 |
 | 2 | Links | One executable links with no undefined symbols | Exit test passes |
-| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Stops at the first SDK call (`nn::os::InitializeMutex`) |
+| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Reaches graphics start-up (`GFXNX64NVN::EarlyInit`) |
 | 4 | First frame | Main menu drawn in a window | Not started |
 | 5 | In game | Create a hero, enter the first area, move and fight | Not started |
 | 6 | Sound | Music, effects and voice play | Not started |
@@ -68,13 +68,25 @@ How the 691 were resolved:
 
 ## 3. Boots without a window
 
-- [ ] Call the game's startup (`nnMain`) from `src/host/main.cpp`
-- [ ] `nn::os`: threads, locks, events, timers, memory
-- [ ] `nn::fs`: mount `game/romfs` as the game's data volume; save volume as a folder
-- [ ] `nn::account`, `nn::oe`, `nn::settings`, `nn::time`: minimal real behaviour
-- [ ] Network, wireless, amiibo, friends: report unavailable cleanly
-- [ ] Renderer and audio that accept every call and do nothing
-- [ ] Meter: how far startup gets, from the game's own log
+Meter: run `build/macos/d3`. It prints the first function it needs that is still a
+stand-in, with the call stack. On 2026-11-22 it runs all of the game's static
+initialisers, enters the game's `main`, mounts the data folder, and stops when
+graphics start-up asks for the Switch's graphics driver.
+
+- [x] The game's startup (`nninitStartup`, `nnMain`) called from `src/host/main.cpp`
+- [x] `nn::os`: threads, locks, events, semaphores, reader/writer locks, thread-local slots, time, memory regions (`src/nn/os/`)
+- [x] `nn::mem`: the game's allocator, on the host's allocator (`src/nn/mem/`)
+- [x] `nn::fs`: `game/romfs` as the data volume, a save folder per user, files and directories (`src/nn/fs/`)
+- [x] `nn::oe`, `nn::settings`, `nn::time`, `nn::diag`: real, minimal behaviour
+- [x] Static initialisers run in the original program's order (`tools/link_order.py`)
+- [x] The Switch libc's 32-byte mutex, for the three libraries that embed one (`src/libc/nnmusl_mutex.c`)
+- [x] Crash reporter: what happened, registers and call stack (`src/host/crash.c`)
+- [ ] A graphics driver that accepts every call and does nothing: the game asks the Switch's driver for about 490 entry points by name (`nvnBootstrapLoader`)
+- [ ] Audio that accepts every call and does nothing (74 FMOD functions)
+- [ ] `nn::account`: one fixed local user
+- [ ] `nn::hid`: report no controllers, then real ones
+- [ ] Network, wireless, amiibo, friends: report unavailable cleanly instead of stopping
+- [ ] Not yet verified: none of the new `nn::os` or `nn::fs` code has tests, and only the paths startup has reached so far have run at all
 
 ## 4. First frame
 

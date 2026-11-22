@@ -128,6 +128,23 @@ Nothing in the decomp is edited. Three mechanisms, all in `src/compat/` and
 The decomp's top-level `include/` directory is not used: it rebinds libc names to
 Switch symbols.
 
+## Rules for platform-layer code
+
+Learned the hard way while bringing startup up:
+
+- **No global objects with constructors.** The game calls into the platform layer
+  from its own static initialisers, which can run first. Create such state on
+  first use.
+- **Fit inside the game's objects.** An SDK object is as big as the Switch made it
+  (a light event is 12 bytes, a libc mutex 32). Never hand its address to a host
+  function that expects the host's larger type; keep the state in the bytes
+  available, or keep a pointer there.
+- **`malloc` in this program is the game's.** It reaches the host's allocator
+  through `nn::mem`, so mixing is safe, but the host allocator itself has to be
+  called by its own name (`src/nn/mem/mem.cpp`).
+- **Basic types as the Switch spells them.** A function's linker name includes its
+  parameter types: `unsigned long`, not `uint64_t`.
+
 ## Platform differences to watch
 
 macOS on Apple silicon was chosen first because it is the same processor family
