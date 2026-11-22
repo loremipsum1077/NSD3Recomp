@@ -2,8 +2,6 @@
 // Added by tools/gen_stubs.py; delete a line when the real function is written.
 #include "host/unimplemented.h"
 
-D3_STUB(_ZN13ActorMovement12UpdateFacingEv, "ActorMovement::UpdateFacing()")
-D3_STUB(_ZNK8Blizzard4Jobs3Job7IsReadyEv, "Blizzard::Jobs::Job::IsReady() const")
 D3_STUB(_ZN21ComplexTypeDescriptor19ValidateDescriptorsERK13XGrowableListIPKS_S2_E, "ComplexTypeDescriptor::ValidateDescriptors(XGrowableList<ComplexTypeDescriptor const*, ComplexTypeDescriptor const*> const&)")
 D3_STUB(_ZN7Console11GameNetwork10ConnectionD2Ev, "Console::GameNetwork::Connection::~Connection()")
 D3_STUB(_ZNK15NavZoneInstance11GetSceneDefEv, "NavZoneInstance::GetSceneDef() const")

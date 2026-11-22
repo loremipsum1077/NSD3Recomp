@@ -100,7 +100,8 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Closing the window sends the game its exit request
 - [x] Frames paced to 60 a second, as the Switch's display would
 - [x] Scripted input for testing without a person: `D3_INPUT_SCRIPT="5:A 8:PLUS"`; `D3_INPUT_TRACE=1` prints button changes
-- [ ] **Investigate shaders** (see architecture): the game loads about 1,700 programs compiled for the Switch's GPU. Find out what the data holds and choose translate or rewrite
+- [x] Investigate shaders: no source in the data, only Switch GPU code plus a complete reflection table; they must be translated ([findings](SHADERS.md))
+- [ ] Obtain the GPU instruction encoding (see open decisions), then write the translator to the host shading language
 - [ ] Choose backend approach A or B by counting required functions. The do-nothing driver shows the game uses roughly 150 of the 498 entry points during startup and the first frames
 - [ ] Swap chain on the window, textures, vertex and index buffers, render states
 - [ ] UI rendering and fonts
@@ -152,8 +153,9 @@ has not been observed: with no controller there is no way to skip them yet.
 | How the decomp is pinned | Milestone 0 | Submodule at a fixed commit |
 | Where the 238 missing data definitions come from | Milestone 2 | Write them in the decomp where the debug info gives their type; extract the rest from the player's copy |
 | Audio: FMOD's own macOS library (the player downloads it) or a replacement for the 74 functions used | Milestone 6 | Undecided |
-| Graphics backend approach | Milestone 4 | New backend (A) |
+| Graphics backend approach | Milestone 4 | New backend (A); the shader findings add a reason |
 | Graphics API on macOS | Milestone 4 | Metal directly, or a portable layer to ease milestone 9 |
-| Shaders: translate or rewrite | Milestone 4 | Unknown until the data is inspected |
+| Shaders: translate or rewrite | Milestone 4 | Decided: translate ([findings](SHADERS.md)) |
+| Source of the Switch GPU instruction encoding | Milestone 4 | Public emulator documentation, if downloading it is acceptable |
 | Window and controller library | Milestone 4 | SDL (also covers Linux and Windows) |
 | Mouse and keyboard play | Milestone 8 | The Switch version is controller-only; later |

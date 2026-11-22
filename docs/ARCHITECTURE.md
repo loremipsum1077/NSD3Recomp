@@ -82,11 +82,10 @@ Preferred: **A**, because the game-side interface is small and already
 platform-neutral, while NVN is large. To be confirmed at milestone 4 by counting
 the functions each option requires.
 
-**Shaders are the largest known risk.** The Switch backend loads shaders already
-compiled for the Switch's GPU (`sCreateNVNShader` reads a GPU-code section and a
-reflection section). If the data holds no shader source, the port needs either a
-translator from that GPU code or rewritten shaders. This is the first thing to
-investigate once a dump is available (roadmap, milestone 4).
+**Shaders have no source in the data**, only machine code for the Switch's GPU
+and a reflection table of names. They have to be translated; see
+[SHADERS.md](SHADERS.md). The reflection table is only visible above the driver
+interface, which is a further reason to prefer approach A.
 
 ## Audio, physics and other middleware
 

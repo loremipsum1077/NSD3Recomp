@@ -99,7 +99,8 @@ static void BufferBuilderSetStorage(BufferState * builder, PoolState * pool, ptr
     builder->offset = offset;
     builder->size = size;
 }
-static int BufferInitialize(BufferState * buffer, const BufferState * builder) { *buffer = *builder; return 1; }
+static BufferState g_lastBuffer;      // for the shader dump below
+static int BufferInitialize(BufferState * buffer, const BufferState * builder) { *buffer = *builder; g_lastBuffer = *builder; return 1; }
 static void * BufferMap(const BufferState * buffer)
 {
     return buffer->pool ? static_cast<char *>(buffer->pool->memory) + buffer->offset : nullptr;
@@ -108,6 +109,47 @@ static uint64_t BufferGetAddress(const BufferState * buffer) { return reinterpre
 static ptrdiff_t BufferGetMemoryOffset(const BufferState * buffer) { return buffer->offset; }
 static PoolState * BufferGetMemoryPool(const BufferState * buffer) { return buffer->pool; }
 static size_t BufferGetSize(const BufferState * buffer) { return buffer->size; }
+
+// ---- shaders ----
+// The driver compiles nothing. For studying the game's shaders, D3_SHADER_DUMP=<folder>
+// writes each one as it is handed over: NNNN.code is the GPU program (its size is that
+// of the buffer the game just created for it), NNNN.control the first 4 KB of the
+// accompanying control block, whose real size the driver is not told.
+
+struct ShaderData { uint64_t data; const void * control; };
+
+static int ProgramSetShaders(void * program, int count, const ShaderData * shaders)
+{
+    static const char * folder = getenv("D3_SHADER_DUMP");
+    static int serial;
+    (void)program;
+    d3_nvn_called("nvnProgramSetShaders");
+    for (int i = 0; folder && i < count; i++)
+    {
+        char path[1024];
+        int n = __atomic_fetch_add(&serial, 1, __ATOMIC_RELAXED);
+        const void * code = reinterpret_cast<const void *>(shaders[i].data);
+        if (code && code == BufferMap(&g_lastBuffer))
+        {
+            snprintf(path, sizeof path, "%s/%04d.code", folder, n);
+            if (FILE * f = fopen(path, "wb"))
+            {
+                fwrite(code, 1, g_lastBuffer.size, f);
+                fclose(f);
+            }
+        }
+        if (shaders[i].control)
+        {
+            snprintf(path, sizeof path, "%s/%04d.control", folder, n);
+            if (FILE * f = fopen(path, "wb"))
+            {
+                fwrite(shaders[i].control, 1, 4096, f);
+                fclose(f);
+            }
+        }
+    }
+    return 1;
+}
 
 // ---- counters ----
 // The game marks a counter "in progress" and waits for the GPU to write the result.
@@ -199,6 +241,7 @@ static void PresentTexture(void * queue, void * window, int textureIndex)
 
 const d3_nvn_entry d3_nvn_overrides[] = {
     {"nvnDeviceGetProcAddress", (d3_nvn_function)Lookup},
+    {"nvnProgramSetShaders", (d3_nvn_function)ProgramSetShaders},
     {"nvnWindowSetPresentInterval", (d3_nvn_function)SetPresentInterval},
     {"nvnQueuePresentTexture", (d3_nvn_function)PresentTexture},
     {"nvnEventInitialize", (d3_nvn_function)EventInitialize},
