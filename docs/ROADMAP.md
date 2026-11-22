@@ -12,7 +12,7 @@ passes on a clean checkout, not before.
 | 1 | Compiles | Every decomp source file compiles to object code on the host | Exit test passes: 1,524 of 1,524 |
 | 2 | Links | One executable links with no undefined symbols | Exit test passes |
 | 3 | Boots without a window | Startup runs to the main menu state with data loaded | Runs its main loop and plays the opening videos; menu not yet confirmed |
-| 4 | First frame | Main menu drawn in a window | Not started |
+| 4 | First frame | Main menu drawn in a window | Window and input work; nothing is drawn yet |
 | 5 | In game | Create a hero, enter the first area, move and fight | Not started |
 | 6 | Sound | Music, effects and voice play | Not started |
 | 7 | Keeps progress | Saves and settings survive a restart | Not started |
@@ -89,17 +89,22 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] `nn::account`: one fixed local user with no network account
 - [x] `nn::hid`: no controller connected
 - [x] Network interface, wireless, amiibo, friends, add-on content, parental controls: report unavailable or empty
-- [ ] Confirm the main menu is reached: needs either a controller press to skip the videos, or a way to read the game's state from outside
+- [ ] Confirm the main menu is reached. Scripted button presses now get past the opening videos and the game starts drawing interface windows and text, but which screen it is cannot be told until something is drawn
 - [ ] 92 stand-ins remain (sockets and TLS, on-screen keyboard, web pages, shop, error dialogs, 23 game functions with no source). None is reached during startup
 - [ ] Not yet verified: none of the new `nn::os` or `nn::fs` code has tests, and only the paths startup has reached so far have run at all
 
 ## 4. First frame
 
-- [ ] **Investigate shaders first** (see architecture): what the data holds, and choose translate or rewrite
-- [ ] Choose backend approach A or B by counting required functions
-- [ ] Window, swap chain, textures, vertex and index buffers, render states
+- [x] A window (SDL2), opened when the game creates its display layer (`src/host/window.cpp`). `D3_HEADLESS=1` runs without one
+- [x] Keyboard and game-controller input, presented to the game as one Pro Controller (`src/nn/hid/`). Keys are listed in the README
+- [x] Closing the window sends the game its exit request
+- [x] Frames paced to 60 a second, as the Switch's display would
+- [x] Scripted input for testing without a person: `D3_INPUT_SCRIPT="5:A 8:PLUS"`; `D3_INPUT_TRACE=1` prints button changes
+- [ ] **Investigate shaders** (see architecture): the game loads about 1,700 programs compiled for the Switch's GPU. Find out what the data holds and choose translate or rewrite
+- [ ] Choose backend approach A or B by counting required functions. The do-nothing driver shows the game uses roughly 150 of the 498 entry points during startup and the first frames
+- [ ] Swap chain on the window, textures, vertex and index buffers, render states
 - [ ] UI rendering and fonts
-- [ ] Controller and keyboard input reach the menu
+- [ ] Not verified: input with a real controller (none was attached), window close, and whether the game's menus respond to the keys as mapped
 
 ## 5. In game
 

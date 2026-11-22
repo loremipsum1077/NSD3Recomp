@@ -1,6 +1,10 @@
 // nn::oe: how the console is being used (docked or handheld, focus, exit requests).
 // The port presents itself as a docked console that always has focus.
+#include "host/window.h"
+#include "nn/hid/hid_host.h"
 #include "nn/nn_types.h"
+
+#include <pthread.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -84,9 +88,24 @@ settings::LanguageCode GetDesiredLanguage()
     return code;
 }
 
-// No system messages are delivered yet (focus changes, exit requests).
-bool TryPopNotificationMessage(unsigned int *)
+// The game asks for system messages once per frame from its main loop, which makes
+// this the place where the host's window and input are serviced. The only message
+// delivered so far is the exit request, sent once when the window is closed.
+bool TryPopNotificationMessage(unsigned int * message)
 {
+    static bool exitSent;
+    if (!pthread_main_np())
+    {
+        return false;
+    }
+    int quit = d3_window_pump();
+    d3_hid_poll();
+    if (quit && !exitSent)
+    {
+        exitSent = true;
+        *message = 4;       // MessageExitRequest
+        return true;
+    }
     return false;
 }
 

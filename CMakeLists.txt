@@ -17,7 +17,7 @@ set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game" CACHE PATH "Folder holding the user
 # The platform layer: everything that replaces the Switch underneath the game.
 file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
     src/nn/*.c src/nn/*.cpp src/gfx/*.c src/gfx/*.cpp src/audio/*.c src/audio/*.cpp
-    src/libc/*.c src/replace/*.c src/host/unimplemented.c src/host/crash.c)
+    src/libc/*.c src/replace/*.c src/host/unimplemented.c src/host/crash.c src/host/window.cpp)
 # Default entry points of the do-nothing graphics driver, from the decomp's NVN header.
 set(D3_NVN_NULL "${CMAKE_BINARY_DIR}/generated/nvn_null_defaults.c")
 add_custom_command(OUTPUT "${D3_NVN_NULL}"
@@ -26,7 +26,10 @@ add_custom_command(OUTPUT "${D3_NVN_NULL}"
             "${D3_DECOMP_ROOT}/src/NintendoSDK/Include/nvn/nvn_Cpp.h"
     COMMENT "Generating the do-nothing graphics driver's entry points")
 add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES} "${D3_NVN_NULL}")
+# Window and input. SDL2 must be installed (on macOS: Homebrew's sdl2).
+find_package(SDL2 REQUIRED)
 target_include_directories(d3_platform PRIVATE src)
+target_link_libraries(d3_platform PRIVATE SDL2::SDL2)
 # Where saves go until milestone 7 settles it. Ignored by git.
 set(D3_SAVE_DIR "${PROJECT_SOURCE_DIR}/save" CACHE PATH "Folder for save data")
 target_compile_definitions(d3_platform PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_DEFAULT_SAVE_DIR="${D3_SAVE_DIR}")
@@ -69,5 +72,6 @@ if(TARGET d3_extracted)
         $<TARGET_OBJECTS:d3_decomp>
         $<TARGET_OBJECTS:d3_replace> $<TARGET_OBJECTS:d3_extracted>)
     target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_WITH_GAME)
+    target_link_libraries(d3 PRIVATE SDL2::SDL2)
     set_target_properties(d3_decomp PROPERTIES EXCLUDE_FROM_ALL OFF)
 endif()

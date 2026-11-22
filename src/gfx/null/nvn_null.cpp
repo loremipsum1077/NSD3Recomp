@@ -2,6 +2,7 @@
 // points that have to do more than nothing for the game to keep going.
 #include "nvn_null.h"
 
+#include "host/window.h"
 #include "nn/nn_types.h"
 
 #include <stdio.h>
@@ -162,8 +163,44 @@ static void CommandBufferSignalEvent(void * commandBuffer, const EventState * ev
     ApplySignal(const_cast<EventState *>(event), mode, value);
 }
 
+// ---- presenting ----
+// On the Switch, presenting a frame waits for the display, which is what paces the
+// game. With nothing to display, wait here instead: 60 frames a second divided by
+// the interval the game asked for.
+
+static int g_presentInterval = 1;
+
+static void SetPresentInterval(void * window, int interval)
+{
+    (void)window;
+    g_presentInterval = interval < 1 ? 1 : interval;
+}
+
+static void PresentTexture(void * queue, void * window, int textureIndex)
+{
+    static uint64_t next;
+    (void)queue;
+    (void)window;
+    (void)textureIndex;
+    d3_nvn_called("nvnQueuePresentTexture");
+    uint64_t now = NowNs();
+    uint64_t frame = 1000000000ull / 60 * g_presentInterval;
+    if (next < now || next > now + frame)
+    {
+        next = now;                 // first frame, or running behind: do not try to catch up
+    }
+    else
+    {
+        timespec wait = {0, static_cast<long>(next - now)};
+        nanosleep(&wait, nullptr);
+    }
+    next += frame;
+}
+
 const d3_nvn_entry d3_nvn_overrides[] = {
     {"nvnDeviceGetProcAddress", (d3_nvn_function)Lookup},
+    {"nvnWindowSetPresentInterval", (d3_nvn_function)SetPresentInterval},
+    {"nvnQueuePresentTexture", (d3_nvn_function)PresentTexture},
     {"nvnEventInitialize", (d3_nvn_function)EventInitialize},
     {"nvnEventGetValue", (d3_nvn_function)EventGetValue},
     {"nvnEventSignal", (d3_nvn_function)EventSignal},
@@ -212,8 +249,8 @@ void InitializeGraphics(void *, unsigned long)
 
 }  // namespace nv
 
-// nn::vi: the display and the layer the game draws to. There is no window yet, so
-// these hand back placeholders that only have to be non-null.
+// nn::vi: the display and the layer the game draws to. Creating the layer opens the
+// host window; the handles themselves are placeholders that only have to be non-null.
 namespace nn { namespace vi {
 
 class Display;
@@ -234,6 +271,7 @@ Result OpenDefaultDisplay(Display ** out)
 
 Result CreateLayer(Layer ** out, Display *)
 {
+    d3_window_create();
     *out = reinterpret_cast<Layer *>(&g_layer);
     return ResultSuccess();
 }
