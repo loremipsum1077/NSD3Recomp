@@ -12,6 +12,9 @@ compile_commands.json
 # Local checkout of the decomp, if not using the sibling directory
 /extern/NSD3Decomp/
 
+# Downloaded reference material
+/extern/reference/
+
 # Editor and OS files
 .DS_Store
 .vscode/

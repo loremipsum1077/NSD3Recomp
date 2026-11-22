@@ -101,7 +101,10 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Frames paced to 60 a second, as the Switch's display would
 - [x] Scripted input for testing without a person: `D3_INPUT_SCRIPT="5:A 8:PLUS"`; `D3_INPUT_TRACE=1` prints button changes
 - [x] Investigate shaders: no source in the data, only Switch GPU code plus a complete reflection table; they must be translated ([findings](SHADERS.md))
-- [ ] Obtain the GPU instruction encoding (see open decisions), then write the translator to the host shading language
+- [x] Obtain the GPU instruction encoding: envytools' table, MIT-licensed; 43 instruction types cover the start-up shaders (`tools/shader_stats.py`)
+- [ ] Shader translator, stage 1: disassemble every shader to readable text using the reflection names
+- [ ] Stage 2: recover structure (if/else, discard) and emit host shading language; every shader must compile
+- [ ] Stage 3: check translated shaders by drawing with them
 - [ ] Choose backend approach A or B by counting required functions. The do-nothing driver shows the game uses roughly 150 of the 498 entry points during startup and the first frames
 - [ ] Swap chain on the window, textures, vertex and index buffers, render states
 - [ ] UI rendering and fonts
@@ -156,6 +159,6 @@ has not been observed: with no controller there is no way to skip them yet.
 | Graphics backend approach | Milestone 4 | New backend (A); the shader findings add a reason |
 | Graphics API on macOS | Milestone 4 | Metal directly, or a portable layer to ease milestone 9 |
 | Shaders: translate or rewrite | Milestone 4 | Decided: translate ([findings](SHADERS.md)) |
-| Source of the Switch GPU instruction encoding | Milestone 4 | Public emulator documentation, if downloading it is acceptable |
+| Source of the Switch GPU instruction encoding | Milestone 4 | Decided: envytools (MIT), kept in an ignored folder |
 | Window and controller library | Milestone 4 | SDL (also covers Linux and Windows) |
 | Mouse and keyboard play | Milestone 8 | The Switch version is controller-only; later |

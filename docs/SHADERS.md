@@ -19,8 +19,11 @@ more shaders load with each area of the game.
   GLSL is not in the data.
 - **They are small and repetitive.** 1,678 programs are created at start-up, 1,312
   of them distinct, 3.7 MB of code in all. A typical shader is 60 instructions; the
-  largest is 1,128. Counting by the leading bits of each instruction, 20 patterns
-  cover 95% of all instructions and 50 cover 99.8%.
+  largest is 1,128.
+- **43 different instructions cover everything.** Decoded against a reference
+  table (below), the 238,057 instructions in the start-up set use 43 instruction
+  types; 48 words (0.02%) are not instructions at all. Three of them, multiply-add,
+  multiply and add on floats, are two thirds of all code.
 - **Vertex and fragment only.** No geometry, tessellation or compute shaders.
 
 ## What this means
@@ -48,16 +51,40 @@ architecture document) sees the whole compiled-shader file, reflection included;
 one that implements the driver interface underneath them (approach B) does not.
 This favours approach A, or B with one extra hook at shader creation.
 
+## Instructions used
+
+`python3 tools/shader_stats.py <dump folder>` prints this table from a dump.
+
+| Group | Instructions (uses) |
+|---|---|
+| Float arithmetic | `ffma` 74,632, `fmul` 57,963, `fadd` 26,012, `fmnmx` 5,186, `fmul32i` 148, `fadd32i` 137, `rro` 750 |
+| Functions (reciprocal, square root, sine, exponent ...) | `mufu` 10,108 |
+| Reading inputs and constants, writing outputs | `ld` 13,785, `st` 13,223, `ipa` 8,226 |
+| Moves and constants | `mov` 4,910, `mov32i` 1,548, `sel` 6 |
+| Conversions | `i2f` 4,458, `f2f` 28, `f2i` 8, `i2i` 5 |
+| Comparison and flow | `bra` 3,975, `isetp` 2,638, `fsetp` 822, `fset` 175, `psetp` 1, `kil` 579, `exit` 1,313, `nop` 3,284 |
+| Textures | `texs` 2,561, `tex` 18, `tld4s` 10, `tlds` 1, `txq` 1, `depbar` 208 |
+| Integer and bit operations | `xmad` 1,198, `lop` 51, `lop3` 14, `iadd` 10, `iadd3` 3, `imnmx` 3, `shl` 3, `shr` 3, `bfi` 1, `lop32i` 1 |
+| Other | `vset` 3 |
+
+## The reference
+
+The Switch's GPU belongs to NVIDIA's GM107 ("Maxwell") family. The instruction
+table used here is from envytools (`envydis/gm107.c`), an MIT-licensed
+reverse-engineering project, downloaded with the owner's permission into
+`extern/reference/`, which git ignores. It gives each instruction's bit pattern,
+name and operand fields. It does not describe the 0x50-byte program header or the
+control block.
+
 ## Open questions
 
-- The instruction encoding has to come from a reference. None is on this machine.
-  Options: download public emulator documentation, or work it out from the data
-  with the reflection table as a guide (slower).
-- Any emulator source used as a reference is under a copyleft licence. The
-  translator must be written from the documented encoding, not copied.
-- What the control block contains has not been decoded.
+- The program header (which inputs and outputs a shader uses) and the control block
+  have not been decoded. The reference does not cover them; the reflection table
+  may make them unnecessary.
 - Shaders loaded after start-up have not been looked at; an area may use
-  instructions the start-up set does not.
+  instructions the start-up set does not. `tools/shader_stats.py` will show any.
+- Branches: 3,975 `bra` in 1,312 shaders. How many are plain if/else and how many
+  are loops decides how much control-flow recovery the translator needs.
 
 ## Reproducing
 
