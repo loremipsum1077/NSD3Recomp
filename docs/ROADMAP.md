@@ -90,7 +90,7 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] `nn::hid`: no controller connected
 - [x] Network interface, wireless, amiibo, friends, add-on content, parental controls: report unavailable or empty
 - [ ] Confirm the main menu is reached: needs either a controller press to skip the videos, or a way to read the game's state from outside
-- [ ] 116 stand-ins remain (sockets and TLS, on-screen keyboard, web pages, shop, error dialogs, 23 game functions with no source). None is reached during startup
+- [ ] 92 stand-ins remain (sockets and TLS, on-screen keyboard, web pages, shop, error dialogs, 23 game functions with no source). None is reached during startup
 - [ ] Not yet verified: none of the new `nn::os` or `nn::fs` code has tests, and only the paths startup has reached so far have run at all
 
 ## 4. First frame
