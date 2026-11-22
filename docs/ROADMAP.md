@@ -115,7 +115,7 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Shader cache: the driver writes each shader's code to `cache/shaders/`; `python3 tools/shader_translate.py --cache cache/shaders` translates what is missing. 1,268 of the 1,312 start-up shaders translate
 - [x] A private static C++ library for the whole program (see architecture): without it the game's replacement of `operator new` collided with the system's libraries
 - [x] Hero Creation renders correctly apart from the video panel: hero models, lighting, effects and colour grading all match what the screen should look like
-- [ ] The class video panel is solid green. The video is never started: its data file (`enUS_CommonCutscene.cpk`) is never opened and no video frame is ever handed to the driver. Not a drawing fault. Suspected, not confirmed: videos are tied to sound, which is off
+- [ ] The class video panel is solid green. No video frame is ever handed to the driver, so this is not a drawing fault: playback is not running. The video archives are opened at start-up (`enUS_CommonCutscene.cpk` and the per-act ones), so the data is found. Suspected, not confirmed: playback is tied to sound, which is off
 - [ ] 2 start-up shaders do not translate (three integer instruction forms)
 - [ ] The first run has no translated shaders and draws nothing; translation should happen inside the program
 - [ ] Not implemented in the driver: scissor, stencil-cull criteria, array textures, mip levels of 3D textures, texture views, non-indexed draws
