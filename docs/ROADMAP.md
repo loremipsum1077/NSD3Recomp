@@ -13,7 +13,7 @@ passes on a clean checkout, not before.
 | 2 | Links | One executable links with no undefined symbols | Exit test passes |
 | 3 | Boots without a window | Startup runs to the main menu state with data loaded | Exit test passes: reaches Hero Creation (seen in milestone 4's screenshots) |
 | 4 | First frame | Main menu drawn in a window | Exit test passes: Hero Creation and its welcome dialog are drawn, with defects listed below |
-| 5 | In game | Create a hero, enter the first area, move and fight | Not started |
+| 5 | In game | Create a hero, enter the first area, move and fight | Hero created, first area entered, hero moves; fighting not tried |
 | 6 | Sound | Music, effects and voice play | Not started |
 | 7 | Keeps progress | Saves and settings survive a restart | Not started |
 | 8 | Release quality | A full act played without a crash; packaged as an app | Not started |
@@ -124,6 +124,21 @@ has not been observed: with no controller there is no way to skip them yet.
 - [ ] Not verified: input with a real controller (none was attached), window close, and whether the game's menus respond to the keys as mapped
 
 ## 5. In game
+
+Reached on 2026-11-22 by scripted input from a cold start: create a Barbarian, accept
+the default name, start the game, arrive outside New Tristram with the HUD up, and
+walk under stick input. The game wrote account, profile and hero files to `save/`.
+
+- [x] Hero creation through to the first area, by scripted input
+- [x] World, hero, lighting and shadows, HUD and minimap are drawn
+- [x] Movement with the left stick
+- [ ] Visible defects in the first area: the health globe is empty, and a tall thin streak is drawn above the hero
+- [ ] Fighting, picking things up, talking to characters, menus: none tried
+- [ ] Whether a saved hero loads again on the next run: not checked (the second run created another hero)
+- [ ] Hero names: the on-screen keyboard answers with `D3_HERO_NAME` or "Hero"; there is no text entry
+
+Still to do from the original list:
+
 
 - [ ] World, actor and effect rendering
 - [ ] Physics (Domino) and cloth behave as on the Switch

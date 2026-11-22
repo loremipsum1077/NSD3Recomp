@@ -57,7 +57,11 @@ int Clamp(int value)
 
 // Scripted input, for testing without a person: D3_INPUT_SCRIPT="5:A 8.5:PLUS 12:B"
 // presses each named button for a quarter of a second at the given number of seconds
-// after the window opened. Names: A B X Y L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN.
+// after the window opened. Names: A B X Y L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN, and
+// LSUP LSDOWN LSLEFT LSRIGHT to push the left stick. "@seconds" after a name holds it
+// longer: "40:LSRIGHT@2".
+int g_scriptStickX, g_scriptStickY;
+
 uint64_t ScriptedButtons()
 {
     static const struct { const char * name; int button; } kNames[] = {
@@ -72,6 +76,7 @@ uint64_t ScriptedButtons()
     }
     double now = (SDL_GetTicks() - start) / 1000.0;
     uint64_t buttons = 0;
+    g_scriptStickX = g_scriptStickY = 0;
     for (const char * p = script; *p;)
     {
         char name[8] = {};
@@ -82,8 +87,16 @@ uint64_t ScriptedButtons()
             break;
         }
         p += used;
-        if (now >= at && now < at + 0.25)
+        double hold = 0.25;
+        int more = 0;
+        if (sscanf(p, "@%lf%n", &hold, &more) == 1)
         {
+            p += more;
+        }
+        if (now >= at && now < at + hold)
+        {
+            g_scriptStickX += strcmp(name, "LSRIGHT") == 0 ? 32767 : strcmp(name, "LSLEFT") == 0 ? -32767 : 0;
+            g_scriptStickY += strcmp(name, "LSUP") == 0 ? 32767 : strcmp(name, "LSDOWN") == 0 ? -32767 : 0;
             for (const auto & n : kNames)
             {
                 if (strcmp(n.name, name) == 0)
@@ -151,6 +164,8 @@ void Sample()
     }
 
     s.buttons |= ScriptedButtons();
+    s.leftX = Clamp(s.leftX + g_scriptStickX);
+    s.leftY = Clamp(s.leftY + g_scriptStickY);
 
     pthread_mutex_lock(&g_lock);
     bool changed = s.buttons != g_state.buttons;
