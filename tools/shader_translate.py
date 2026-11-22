@@ -86,6 +86,7 @@ class Translator:
         self.cbufs, self.textures = set(), {}
         self.inputs, self.outputs = set(), set()
         self.reads_position = self.writes_position = False
+        self.vertex_id = self.instance_id = False
         self.unhandled, self.approximated = [], []
 
     # ---- operands ----
@@ -188,6 +189,12 @@ class Translator:
     def attribute_in(self, off):
         """Float expression for reading attribute memory at a fixed offset."""
         comp = "xyzw"[off % 16 // 4]
+        if off == 0x2fc and not self.fragment:      # the vertex's number, as an integer
+            self.vertex_id = True
+            return "as_type<float>(vid)"
+        if off == 0x2f8 and not self.fragment:
+            self.instance_id = True
+            return "as_type<float>(iid)"
         if 0x70 <= off < 0x80:
             self.reads_position = True
             return f"in.position.{comp}"
@@ -309,8 +316,17 @@ class Translator:
             return self.store(fl, o)
         if op == "ipa":
             return self.interpolate(fl, o)
-        if op in ("texs", "tex", "tlds"):
+        if op in ("texs", "tlds", "tld4s"):
             return self.sample(op, fl, o)
+        if op == "tex":
+            return self.sample_vector(fl, o)
+        if op == "txq":
+            return self.query(fl, o)
+        if op == "bfi":
+            # Insert the low `len` bits of the source into the base at `pos`.
+            pos, length = f"({self.u(o[2])} & 0xffu)", f"(({self.u(o[2])} >> 8) & 0xffu)"
+            mask = f"((1u << {length}) - 1u)"
+            return self.set_u(o[0], f"({self.u(o[3])} & ~({mask} << {pos})) | (({self.u(o[1])} & {mask}) << {pos})")
         if op == "kil":
             return "discard_fragment();"
         return None
@@ -406,10 +422,56 @@ class Translator:
             return None
         return self.set_f(o[0], value, fl)
 
-    def sample(self, op, fl, o):
-        if op == "tex":
+    def sample_vector(self, fl, o):
+        """`tex`: coordinates in consecutive registers, results in consecutive registers."""
+        dst, coord, aux, handle, mask = o[0][0][2], o[1][0][2], o[2], o[3][0][1], o[4][0][1]
+        if "t2d" not in fl or any(x not in ("t2d", "lz", "aoffi", "nodep") for x in fl):
             return None
+        b = self.texture(handle, "2d")
+        nxt = lambda n: (("reg", "r", n), set())
+        uv = f"float2({self.f(nxt(coord))}, {self.f(nxt(coord + 1))})"
+        if "aoffi" in fl:
+            # A texel offset packed four bits a side into the next operand.
+            a = self.u(aux)
+            ox, oy = f"float(int({a} << 28) >> 28)", f"float(int({a} << 24) >> 28)"
+            uv = f"({uv} + float2({ox}, {oy}) / float2(t{b}.get_width(), t{b}.get_height()))"
+        lod = ", level(0)" if "lz" in fl or not self.fragment else ""
+        out, n = [f"float4 t = t{b}.sample(s{b}, {uv}{lod});"], dst
+        for bit in range(4):
+            if mask & (1 << bit):
+                out.append(self.set_u(nxt(n), f"as_type<uint>(t.{'xyzw'[bit]})"))
+                n += 1
+        return "{ " + " ".join(out) + " }"
+
+    def query(self, fl, o):
+        """`txq dimension`: the texture's size at a mip level, as integers."""
+        if "dimension" not in fl:
+            return None
+        dst, lod, handle, mask = o[0][0][2], self.u(o[1]), o[2][0][1], o[3][0][1]
+        b = self.texture(handle, "2d")
+        vals = [f"t{b}.get_width({lod})", f"t{b}.get_height({lod})", "1u", f"t{b}.get_num_mip_levels()"]
+        out, n = [], dst
+        for bit in range(4):
+            if mask & (1 << bit):
+                out.append(self.set_u((("reg", "r", n), set()), f"uint({vals[bit]})"))
+                n += 1
+        return " ".join(out)
+
+    def sample(self, op, fl, o):
         dst1, dst0, c0, c1, handle = o[0], o[1], o[2], o[3], o[4][0][1]
+        if op == "tld4s":
+            # Gather: one channel of the four texels around the point.
+            comp = next((x for x in fl if x in ("r", "g", "b", "a")), None)
+            if comp is None or any(x not in ("r", "g", "b", "a", "nodep") for x in fl):
+                return None
+            b = self.texture(handle, "2d")
+            call = f"t{b}.gather(s{b}, float2({self.f(c0)}, {self.f(c1)}), int2(0), component::{'xyzw'['rgba'.index(comp)]})"
+            slots = [dst0[0][2], dst0[0][2] + 1, dst1[0][2], dst1[0][2] + 1]
+            out = [f"float4 t = {call};"]
+            for i in range(4):
+                if (i < 2 and dst0[0][2] != 255) or (i >= 2 and dst1[0][2] != 255):
+                    out.append(self.set_u((("reg", "r", slots[i]), set()), f"as_type<uint>(t.{'xyzw'[i]})"))
+            return "{ " + " ".join(out) + " }"
         mask = next((x for x in fl if set(x) <= set("rgba") and x), None)
         if mask is None:
             return None
@@ -418,8 +480,8 @@ class Translator:
                 return None
             b = self.texture(handle, "2d")
             call = f"t{b}.read(uint2({self.u(c0)}, {self.u(c1)}), 0)"
-        elif "tcube" in fl:
-            b = self.texture(handle, "cube")
+        elif "t3d" in fl or "tcube" in fl:
+            b = self.texture(handle, "3d" if "t3d" in fl else "cube")
             x = self.f(c0)
             y = self.f((("reg", "r", c0[0][2] + 1), set()))
             call = f"t{b}.sample(s{b}, float3({x}, {y}, {self.f(c1)}){self.level()})"
@@ -544,6 +606,10 @@ class Translator:
         params = ["FIn in [[stage_in]]" if self.fragment else "VIn in [[stage_in]]"]
         if not self.fragment and not self.inputs:
             params = []
+        if self.vertex_id:
+            params.append("uint vid [[vertex_id]]")
+        if self.instance_id:
+            params.append("uint iid [[instance_id]]")
         params += [f"const device uint * c{i} [[buffer({i})]]" for i in sorted(self.cbufs)]
         for b, kind in sorted(self.textures.items()):
             params += [f"texture{kind}<float> t{b} [[texture({b})]]", f"sampler s{b} [[sampler({b})]]"]

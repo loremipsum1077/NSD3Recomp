@@ -161,6 +161,7 @@ struct ProgramState {               // Program is 0xc0 bytes
     int stage;                      // 0 vertex, 1 fragment
     const void * literals;          // the shader's pool of literal constants (its c[1])
     uint32_t literalSize;
+    uint64_t hash;                  // of its code: the name of its file in the shader cache
 };
 
 struct UniformBinding { uint64_t address; size_t size; };
@@ -448,7 +449,8 @@ size_t TextureBuilderGetStorageSize(const TextureDesc * b)
         int w = b->width >> level ? b->width >> level : 1;
         int h = b->height >> level ? b->height >> level : 1;
         int d = b->target == 2 ? (b->depth >> level ? b->depth >> level : 1) : 1;
-        total += LevelSize(f, w, h, layers * d);
+        // A 3D level is stored in whole blocks of up to 16 slices.
+        total += LevelSize(f, w, h, layers * (b->target == 2 ? static_cast<int>(AlignUp(d, 16)) : 1));
     }
     return AlignUp(total, 0x1000);
 }
@@ -637,14 +639,68 @@ void Deswizzle(const uint8_t * src, uint8_t * dst, size_t rowBytes, size_t rows)
     }
 }
 
+// A 3D texture is grouped by slice instead of by row: each block is one tile high and
+// up to 16 slices deep. Established from the game's 64x64x64 colour lookup table,
+// whose contents are (nearly) their own coordinates.
+void Deswizzle3D(const uint8_t * src, uint8_t * dst, size_t rowBytes, size_t rows, size_t slices)
+{
+    size_t blockHeight = 1, blockDepth = 16;
+    while (blockDepth > 1 && slices <= blockDepth / 2)
+    {
+        blockDepth /= 2;
+    }
+    size_t tilesAcross = AlignUp(rowBytes, 64) / 64;
+    size_t blocksDown = AlignUp(rows, 8 * blockHeight) / (8 * blockHeight);
+    size_t sliceBytes = 512 * blockHeight;                  // one slice of one block
+    size_t blockBytes = sliceBytes * blockDepth;
+    for (size_t z = 0; z < slices; z++)
+    {
+        size_t zBase = (z / blockDepth) * tilesAcross * blocksDown * blockBytes + (z % blockDepth) * sliceBytes;
+        for (size_t y = 0; y < rows; y++)
+        {
+            size_t tileRow = y / 8;
+            size_t rowBase = zBase + (tileRow / blockHeight) * tilesAcross * blockBytes + (tileRow % blockHeight) * 512;
+            for (size_t x = 0; x < rowBytes; x += 16)
+            {
+                size_t n = rowBytes - x < 16 ? rowBytes - x : 16;
+                memcpy(dst + (z * rows + y) * rowBytes + x, src + rowBase + (x / 64) * blockBytes + TileOffset(x, y), n);
+            }
+        }
+    }
+}
+
 void TextureFlushTexels(TextureState * t, const void * view, const void * region)
 {
     (void)view;
     (void)region;
     d3_nvn_called("nvnTextureFlushTexels");
     id<MTLTexture> texture = Metal(t);
-    if (!texture || !t->desc.pool || !t->desc.pool->memory || t->desc.target == 2)
+    if (!texture || !t->desc.pool || !t->desc.pool->memory)
     {
+        return;
+    }
+    if (t->desc.target == 2)
+    {
+        @autoreleasepool
+        {
+            // Only the first mip level; the game's 3D textures are small lookup tables.
+            FormatInfo f = Format(t->desc.format);
+            size_t rowBytes = static_cast<size_t>(t->desc.width) * f.bytes;
+            NSMutableData * plain = [NSMutableData dataWithLength:rowBytes * t->desc.height * t->desc.depth];
+            Deswizzle3D(static_cast<const uint8_t *>(t->desc.pool->memory) + t->desc.offset, static_cast<uint8_t *>(plain.mutableBytes),
+                        rowBytes, t->desc.height, t->desc.depth);
+            [texture replaceRegion:MTLRegionMake3D(0, 0, 0, t->desc.width, t->desc.height, t->desc.depth)
+                       mipmapLevel:0
+                             slice:0
+                         withBytes:plain.bytes
+                       bytesPerRow:rowBytes
+                     bytesPerImage:rowBytes * t->desc.height];
+            static int shown;
+            if (shown++ < 4 && getenv("D3_METAL_STATS"))
+            {
+                fprintf(stderr, "metal: 3D texture %dx%dx%d format %d uploaded\n", t->desc.width, t->desc.height, t->desc.depth, t->desc.format);
+            }
+        }
         return;
     }
     @autoreleasepool
@@ -894,13 +950,16 @@ NSString * CacheFolder()
 NSMutableDictionary<NSNumber *, id> * g_functions;      // code hash -> id<MTLFunction>, or NSNull when there is none
 unsigned g_missingShaders;
 
-id<MTLFunction> FunctionFor(const void * code, size_t size, int * stage)
+// `instructionBytes` is how much of the code is instructions; literal constants and
+// padding follow, and must not be handed to the translator as if they were code.
+id<MTLFunction> FunctionFor(const void * code, size_t size, size_t instructionBytes, int * stage, uint64_t * hashOut)
 {
     uint64_t hash = 0xcbf29ce484222325ull;
     for (size_t i = 0; i < size; i++)
     {
         hash = (hash ^ static_cast<const uint8_t *>(code)[i]) * 0x100000001b3ull;
     }
+    *hashOut = hash;
     uint32_t word0;
     memcpy(&word0, static_cast<const uint8_t *>(code) + 0x30, 4);
     *stage = ((word0 >> 10) & 15) == 5 ? 1 : 0;
@@ -915,6 +974,14 @@ id<MTLFunction> FunctionFor(const void * code, size_t size, int * stage)
     }
     NSString * base = [CacheFolder() stringByAppendingPathComponent:[NSString stringWithFormat:@"%016llx", hash]];
     NSString * source = [NSString stringWithContentsOfFile:[base stringByAppendingString:@".metal"] encoding:NSUTF8StringEncoding error:nil];
+    // For finding a shader that draws wrongly: D3_SHADER_SKIP lists hashes (separated by
+    // commas) to treat as untranslated, so their draws are skipped.
+    static const char * skip = getenv("D3_SHADER_SKIP");
+    if (skip && strstr(skip, [NSString stringWithFormat:@"%016llx", hash].UTF8String))
+    {
+        g_functions[@(hash)] = [NSNull null];
+        return nil;
+    }
     id<MTLFunction> function = nil;
     if (source)
     {
@@ -932,7 +999,7 @@ id<MTLFunction> FunctionFor(const void * code, size_t size, int * stage)
         NSString * codePath = [base stringByAppendingString:@".code"];
         if (![[NSFileManager defaultManager] fileExistsAtPath:codePath])
         {
-            [[NSData dataWithBytes:code length:size] writeToFile:codePath atomically:YES];
+            [[NSData dataWithBytes:code length:instructionBytes] writeToFile:codePath atomically:YES];
         }
         g_missingShaders++;
     }
@@ -964,7 +1031,17 @@ int ProgramSetShaders(ProgramState * p, int count, const ShaderData * shaders)
         {
             return 1;       // the size of the code is only known from the buffer the game just made for it
         }
-        id<MTLFunction> function = FunctionFor(code, size, &p->stage);
+        size_t instructionBytes = size;
+        if (shaders[0].control)
+        {
+            uint32_t end;
+            memcpy(&end, static_cast<const uint8_t *>(shaders[0].control) + 0x6f8, 4);
+            if (end >= 0x80 && end <= size)
+            {
+                instructionBytes = end;
+            }
+        }
+        id<MTLFunction> function = FunctionFor(code, size, instructionBytes, &p->stage, &p->hash);
         p->function = function ? (__bridge_retained void *)function : nullptr;
         // The control block says where the shader's literal constants sit inside its code.
         if (shaders[0].control)
@@ -1194,6 +1271,14 @@ id<MTLRenderPipelineState> Pipeline()
             fprintf(stderr, "metal: pipeline rejected: %s\n", error.localizedDescription.UTF8String);
         }
     }
+    // D3_METAL_PIPELINES=1 lists each new combination of shaders and target, with the
+    // cache file names of the shaders, for tracking down a pass that draws wrongly.
+    if (getenv("D3_METAL_PIPELINES"))
+    {
+        fprintf(stderr, "metal: pipeline vs %016llx fs %016llx -> %lux%lu format %d blend %d%s\n", g_draw.program[0]->hash,
+                g_draw.program[1]->hash, static_cast<unsigned long>(Metal(g_color).width), static_cast<unsigned long>(Metal(g_color).height),
+                g_color ? g_color->desc.format : 0, static_cast<int>(key.blendEnable), state ? "" : "  REJECTED");
+    }
     g_pipelines[k] = state ?: [NSNull null];
     return state;
 }
@@ -1236,6 +1321,33 @@ id<MTLDepthStencilState> DepthState()
 
 // ---- drawing ----
 
+// The game's final gamma pass reads the picture and writes it back to the same
+// texture, which the Switch's GPU allows when each pixel only reads itself. Metal
+// does not, so a draw that samples its own target reads from a copy made just before.
+id<MTLTexture> g_feedbackCopy;
+
+id<MTLTexture> CopyOfTarget(id<MTLTexture> target)
+{
+    if (!g_feedbackCopy || g_feedbackCopy.width != target.width || g_feedbackCopy.height != target.height ||
+        g_feedbackCopy.pixelFormat != target.pixelFormat)
+    {
+        MTLTextureDescriptor * d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:target.pixelFormat
+                                                                                      width:target.width
+                                                                                     height:target.height
+                                                                                  mipmapped:NO];
+        d.usage = MTLTextureUsageShaderRead;
+        d.storageMode = MTLStorageModePrivate;
+        g_feedbackCopy = [g_device newTextureWithDescriptor:d];
+    }
+    FlushClears();          // the copy must see everything drawn so far
+    id<MTLBlitCommandEncoder> blit = [Commands() blitCommandEncoder];
+    [blit copyFromTexture:target sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(target.width, target.height, 1)
+                toTexture:g_feedbackCopy destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+    [blit endEncoding];
+    return g_feedbackCopy;
+}
+
 void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, uint64_t indices, int baseVertex)
 {
     (void)cb;
@@ -1272,6 +1384,18 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
         {
             g_stats[kNoPipeline]++;
             return;
+        }
+        id<MTLTexture> selfCopy = nil;
+        for (int stage = 0; stage < 2 && !selfCopy; stage++)
+        {
+            for (int i = 0; i < 16; i++)
+            {
+                if (Metal(g_color) && Metal(g_draw.textures[stage][i].texture) == Metal(g_color))
+                {
+                    selfCopy = CopyOfTarget(Metal(g_color));
+                    break;
+                }
+            }
         }
         id<MTLRenderCommandEncoder> pass = Pass();
         NSUInteger offset = 0;
@@ -1358,9 +1482,13 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                 const TextureBinding & t = g_draw.textures[stage][i];
                 id<MTLTexture> texture = Metal(t.texture);
                 id<MTLSamplerState> sampler = t.sampler && t.sampler->metal ? (__bridge id<MTLSamplerState>)t.sampler->metal : nil;
-                if (!texture || texture == Metal(g_color))
+                if (!texture)
                 {
-                    continue;       // nothing bound, or it is the texture being drawn into
+                    continue;
+                }
+                if (texture == Metal(g_color))
+                {
+                    texture = selfCopy;     // see CopyOfTarget
                 }
                 if (stage == 0)
                 {
