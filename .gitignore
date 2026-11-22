@@ -4,6 +4,9 @@
 # Save data written by the port
 /save/
 
+# Shaders translated from the player's game data
+/cache/
+
 # Build output and local tool results
 /build/
 /out/

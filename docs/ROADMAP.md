@@ -11,8 +11,8 @@ passes on a clean checkout, not before.
 | 0 | Foundations | Clean checkout configures, builds and reports whether game data is present | In progress |
 | 1 | Compiles | Every decomp source file compiles to object code on the host | Exit test passes: 1,524 of 1,524 |
 | 2 | Links | One executable links with no undefined symbols | Exit test passes |
-| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Runs its main loop and plays the opening videos; menu not yet confirmed |
-| 4 | First frame | Main menu drawn in a window | Metal driver presents frames; no draws yet, so the picture is black |
+| 3 | Boots without a window | Startup runs to the main menu state with data loaded | Exit test passes: reaches Hero Creation (seen in milestone 4's screenshots) |
+| 4 | First frame | Main menu drawn in a window | Exit test passes: Hero Creation and its welcome dialog are drawn, with defects listed below |
 | 5 | In game | Create a hero, enter the first area, move and fight | Not started |
 | 6 | Sound | Music, effects and voice play | Not started |
 | 7 | Keeps progress | Saves and settings survive a restart | Not started |
@@ -103,16 +103,22 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Investigate shaders: no source in the data, only Switch GPU code plus a complete reflection table; they must be translated ([findings](SHADERS.md))
 - [x] Obtain the GPU instruction encoding: envytools' table, MIT-licensed; 43 instruction types cover the start-up shaders (`tools/shader_stats.py`)
 - [x] Shader translator, stage 1: every shader disassembles to readable text with reflection names (`tools/shader_disasm.py`); control flow is forward-only except two loops
-- [ ] Establish what the driver-supplied constant block `c[1]` holds
+- [x] `c[1]` is each shader's own pool of literal constants, stored after its code; the control block gives its offset and size
 - [x] Stage 2: emit Metal shading language (`tools/shader_translate.py`): 990 of 1,010 captured shaders translate and all 990 compile
 - [ ] The 20 shaders that use instructions not handled yet (3D textures, gather, size queries, a few rare integer forms)
 - [ ] Move the translator into the program (it is a Python tool today) with an on-disk cache
-- [ ] Stage 3: check translated shaders by drawing with them
+- [x] Stage 3: translated shaders draw the menu correctly, which supports the inferred rules for texture reads, literal pools, integer inputs and interpolation; the rules for depth-only shaders and `fmnmx` are still unconfirmed
 - [x] Backend approach chosen: implement the driver interface on Metal (B). The game uses 114 of the 498 entry points (see architecture)
 - [x] Metal driver, part 1 (`src/gfx/metal/nvn_metal.mm`): device, the game's textures as render targets, clears, presenting to the window, screenshots (`D3_SCREENSHOT=file.png`, `D3_SCREENSHOT_FRAME=n`)
-- [ ] Part 2, draws: vertex and index data, constant blocks, pipelines built from translated shaders, blend/depth/polygon state. Nothing is visible until this exists: the game never clears the window's texture, it reaches it only by drawing
-- [ ] Part 3, textures: contents are stored in the Switch GPU's tiled layout and have to be rearranged; samplers
-- [ ] Translated shaders at run time: today the translator is a Python tool
+- [x] Part 2, draws: vertex and index data read straight from the game's memory pools, a copy of the constant blocks per draw, pipelines built from translated shaders, blend/depth/polygon/stencil state. About 1,230 draws a frame at 60 frames a second on Hero Creation
+- [x] Part 3, textures: contents rearranged from the Switch GPU's tiled layout; compressed formats; samplers; channel remapping (fonts)
+- [x] Shader cache: the driver writes each shader's code to `cache/shaders/`; `python3 tools/shader_translate.py --cache cache/shaders` translates what is missing. 1,268 of the 1,312 start-up shaders translate
+- [x] A private static C++ library for the whole program (see architecture): without it the game's replacement of `operator new` collided with the system's libraries
+- [ ] Known defects on Hero Creation: the hero's body is not drawn (its weapons are), and the class video panel is solid green
+- [ ] 44 start-up shaders do not translate (about 13 draws a frame are skipped for it)
+- [ ] The first run has no translated shaders and draws nothing; translation should happen inside the program
+- [ ] Not implemented in the driver: scissor, stencil-cull criteria, 3D and array textures, texture views, non-indexed draws
+- [ ] Not checked: anything beyond Hero Creation; resizing the window; whether colours are exact (sRGB handling was not examined)
 - [ ] UI rendering and fonts
 - [ ] Not verified: input with a real controller (none was attached), window close, and whether the game's menus respond to the keys as mapped
 

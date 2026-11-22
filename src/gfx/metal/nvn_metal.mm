@@ -12,9 +12,14 @@
 // game allocates at the size the Switch's driver needs. Each structure below lives
 // at the start of that storage and must fit: see the size notes and static_asserts.
 //
-// Done so far: device, window, textures as render targets, clears, presenting to
-// the window, screenshots. Not yet: draws, shaders, texture contents, samplers,
-// blend/depth/polygon state. Until then the window shows the game's clear colours.
+// Shaders. The game hands over GPU machine code. tools/shader_translate.py turns it
+// into Metal source; this file looks each shader up by a hash of its code in the
+// shader cache folder, and writes the code there when no translation exists yet, so
+// that `python3 tools/shader_translate.py --cache <folder>` can fill the gap. A draw
+// whose shaders are not translated is skipped and counted.
+//
+// Not done: stencil-cull criteria, scissor, 3D and array textures, texture views,
+// draws that are not indexed. D3_METAL_STATS=1 prints what was drawn and skipped.
 #include "../null/nvn_null.h"
 #include "host/window.h"
 
@@ -23,11 +28,21 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+#include <mach/vm_page_size.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 namespace {
+
+// ---- statistics (D3_METAL_STATS=1) ----
+
+enum Stat { kDrawn, kNoShader, kNoPipeline, kNoBuffer, kNoTarget, kUnsupported, kStatCount };
+unsigned g_stats[kStatCount];
+const char * const kStatNames[kStatCount] = {"drawn", "skipped: shader not translated", "skipped: pipeline rejected",
+                                             "skipped: data not in a known memory pool", "skipped: no render target",
+                                             "skipped: primitive or index type not supported"};
 
 // ---- formats ----
 
@@ -82,11 +97,22 @@ FormatInfo Format(int nvn)
 
 // ---- object state, kept at the start of the game's own objects ----
 
-struct PoolState { void * memory; size_t size; };       // as in the do-nothing driver
+// MemoryPool is 256 bytes. The first two fields are what the do-nothing driver keeps,
+// so its pool and buffer functions keep working on these objects.
+struct PoolState {
+    void * memory;
+    size_t size;
+    void * buffer;              // retained id<MTLBuffer> over the same memory, no copy
+    uintptr_t base;             // start of that buffer (the pool's memory rounded down to a page)
+    size_t length;
+};
+
+struct BufferState { PoolState * pool; ptrdiff_t offset; size_t size; };   // as in the do-nothing driver
 
 struct TextureDesc {                // TextureBuilder is 0x80 bytes
     int width, height, depth;
     int format, target, flags, levels;
+    uint8_t swizzle[4];             // which source channel each of r, g, b, a reads: 0 zero, 1 one, 2 r, 3 g, 4 b, 5 a
     PoolState * pool;
     ptrdiff_t offset;
 };
@@ -108,6 +134,58 @@ struct WindowDesc {                 // WindowBuilder is 0x40 bytes, Window 0x180
     int interval;
 };
 static_assert(sizeof(WindowDesc) <= 0x40, "window state must fit the game's objects");
+
+struct SamplerDesc {                // SamplerBuilder and Sampler are 0x60 bytes
+    int minFilter, magFilter;
+    int wrap[3];
+    void * metal;                   // retained id<MTLSamplerState>
+};
+
+// The small state objects are only 4 or 8 bytes, so their settings are packed.
+struct AttribState { uint32_t format : 8, stream : 5, offset : 18, set : 1; };      // VertexAttribState: 4 bytes
+struct StreamState { int32_t stride; int32_t divisor; };                              // VertexStreamState: 8 bytes
+struct BlendDesc { uint8_t srcColor, dstColor, srcAlpha, dstAlpha, opColor, opAlpha, target, pad; };   // BlendState: 8 bytes
+struct ColorDesc { uint32_t blendEnable; };                                           // ColorState
+struct MaskDesc { uint32_t mask; };                                                   // ChannelMaskState: 4 bits per target
+struct PolygonDesc { uint32_t cull : 2, frontFace : 1, mode : 2; };                   // PolygonState
+struct DepthDesc {                                                                    // DepthStencilState: 8 bytes
+    uint64_t depthTest : 1, depthWrite : 1, depthFunc : 4, stencilTest : 1;
+    uint64_t frontFunc : 4, frontFail : 4, frontDepthFail : 4, frontPass : 4;
+    uint64_t backFunc : 4, backFail : 4, backDepthFail : 4, backPass : 4;
+};
+static_assert(sizeof(AttribState) == 4 && sizeof(StreamState) == 8 && sizeof(BlendDesc) == 8 && sizeof(DepthDesc) == 8 &&
+              sizeof(PolygonDesc) == 4, "packed state sizes");
+
+struct ProgramState {               // Program is 0xc0 bytes
+    void * function;                // retained id<MTLFunction>, null if the shader has no translation
+    int stage;                      // 0 vertex, 1 fragment
+    const void * literals;          // the shader's pool of literal constants (its c[1])
+    uint32_t literalSize;
+};
+
+struct UniformBinding { uint64_t address; size_t size; };
+struct TextureBinding { TextureState * texture; SamplerDesc * sampler; };
+
+// Everything the next draw depends on.
+struct DrawState {
+    ProgramState * program[2];
+    AttribState attribs[16];
+    int attribCount;
+    StreamState streams[16];
+    UniformBinding vertexBuffers[16];
+    UniformBinding uniforms[2][14];
+    TextureBinding textures[2][16];
+    BlendDesc blend;
+    ColorDesc color;
+    MaskDesc mask;
+    PolygonDesc polygon;
+    DepthDesc depth;
+    float blendColor[4];
+    int stencilRef;
+    int viewport[4];
+    float depthRange[2];
+    bool viewportSet;
+} g_draw;
 
 // ---- the device ----
 
@@ -198,6 +276,106 @@ void FlushClears()
     EndPass();
 }
 
+// ---- memory pools ----
+// The game owns the memory of every pool and writes vertices, indices and constants
+// into it directly. Each pool is wrapped in a Metal buffer over the same pages, so
+// the GPU reads what the game wrote without a copy.
+
+PoolState * g_pools[512];
+int g_poolCount;
+
+int PoolInitialize(PoolState * pool, const PoolState * builder)
+{
+    @autoreleasepool
+    {
+        memset(pool, 0, sizeof(*pool));
+        pool->memory = builder->memory;
+        pool->size = builder->size;
+        if (!pool->memory || !pool->size)
+        {
+            return 1;
+        }
+        uintptr_t page = vm_page_size;
+        uintptr_t start = reinterpret_cast<uintptr_t>(pool->memory) & ~(page - 1);
+        uintptr_t end = (reinterpret_cast<uintptr_t>(pool->memory) + pool->size + page - 1) & ~(page - 1);
+        id<MTLBuffer> buffer = [g_device newBufferWithBytesNoCopy:reinterpret_cast<void *>(start)
+                                                           length:end - start
+                                                          options:MTLResourceStorageModeShared
+                                                      deallocator:nil];
+        if (!buffer)
+        {
+            fprintf(stderr, "metal: could not wrap a %zu-byte memory pool; draws that use it will be skipped\n", pool->size);
+            return 1;
+        }
+        pool->buffer = (__bridge_retained void *)buffer;
+        pool->base = start;
+        pool->length = end - start;
+        if (g_poolCount < 512)
+        {
+            g_pools[g_poolCount++] = pool;
+        }
+        return 1;
+    }
+}
+
+void PoolFinalize(PoolState * pool)
+{
+    for (int i = 0; i < g_poolCount; i++)
+    {
+        if (g_pools[i] == pool)
+        {
+            g_pools[i] = g_pools[--g_poolCount];
+            break;
+        }
+    }
+    if (pool->buffer)
+    {
+        CFRelease(pool->buffer);
+        pool->buffer = nullptr;
+    }
+}
+
+// The Metal buffer and offset for an address inside some pool.
+id<MTLBuffer> BufferAt(uint64_t address, size_t size, NSUInteger * offset)
+{
+    for (int i = 0; i < g_poolCount; i++)
+    {
+        PoolState * p = g_pools[i];
+        if (address >= p->base && address + size <= p->base + p->length)
+        {
+            *offset = address - p->base;
+            return (__bridge id<MTLBuffer>)p->buffer;
+        }
+    }
+    return nil;
+}
+
+// Constant blocks change between draws within a frame, and the GPU reads them only
+// after the frame is submitted, so each draw gets its own copy. The copies live in
+// large buffers that are reused a few frames later.
+const int kScratchBuffers = 4;
+const NSUInteger kScratchSize = 32 << 20;
+id<MTLBuffer> g_scratch[kScratchBuffers];
+NSUInteger g_scratchUsed;
+
+id<MTLBuffer> Snapshot(const void * data, size_t size, NSUInteger * offset)
+{
+    int slot = g_frame % kScratchBuffers;
+    if (!g_scratch[slot])
+    {
+        g_scratch[slot] = [g_device newBufferWithLength:kScratchSize options:MTLResourceStorageModeShared];
+    }
+    NSUInteger at = (g_scratchUsed + 255) & ~static_cast<NSUInteger>(255);
+    if (at + size > kScratchSize)
+    {
+        return nil;
+    }
+    memcpy(static_cast<char *>(g_scratch[slot].contents) + at, data, size);
+    g_scratchUsed = at + size;
+    *offset = at;
+    return g_scratch[slot];
+}
+
 // ---- device ----
 
 int DeviceInitialize(void * device, const void * builder)
@@ -215,6 +393,26 @@ void TextureBuilderSetDefaults(TextureDesc * b)
     b->width = b->height = b->depth = 1;
     b->target = 1;      // 2D
     b->levels = 1;
+    b->swizzle[0] = 2; b->swizzle[1] = 3; b->swizzle[2] = 4; b->swizzle[3] = 5;
+}
+
+// Fonts and masks are single-channel textures that the game reads as alpha.
+void TextureBuilderSetSwizzle(TextureDesc * b, int r, int g, int bl, int a)
+{
+    b->swizzle[0] = r; b->swizzle[1] = g; b->swizzle[2] = bl; b->swizzle[3] = a;
+}
+
+MTLTextureSwizzle Swizzle(int s)
+{
+    switch (s)
+    {
+    case 0: return MTLTextureSwizzleZero;
+    case 1: return MTLTextureSwizzleOne;
+    case 3: return MTLTextureSwizzleGreen;
+    case 4: return MTLTextureSwizzleBlue;
+    case 5: return MTLTextureSwizzleAlpha;
+    default: return MTLTextureSwizzleRed;
+    }
 }
 
 void TextureBuilderSetSize3D(TextureDesc * b, int w, int h, int d) { b->width = w; b->height = h; b->depth = d; }
@@ -287,6 +485,12 @@ int TextureInitialize(TextureState * t, const TextureDesc * b)
             d.depth = b->depth;
         }
         d.usage = MTLTextureUsageShaderRead | (f.block ? 0 : MTLTextureUsageRenderTarget);
+        if (b->swizzle[0] != 2 || b->swizzle[1] != 3 || b->swizzle[2] != 4 || b->swizzle[3] != 5)
+        {
+            d.swizzle = MTLTextureSwizzleChannelsMake(Swizzle(b->swizzle[0]), Swizzle(b->swizzle[1]), Swizzle(b->swizzle[2]),
+                                                      Swizzle(b->swizzle[3]));
+            d.usage = MTLTextureUsageShaderRead;     // a remapped texture cannot also be drawn into
+        }
         d.storageMode = f.depth ? MTLStorageModePrivate : MTLStorageModeShared;
         id<MTLTexture> texture = [g_device newTextureWithDescriptor:d];
         if (!texture)
@@ -401,6 +605,788 @@ void ClearDepthStencil(void * cb, float depth, int depthMask, int stencil, int s
     }
 }
 
+// ---- texture contents ----
+// The game stores texel data in the pool the texture was created on, in the Switch
+// GPU's "block linear" layout: 64-byte by 8-row tiles with a fixed order inside each
+// tile, stacked into blocks. FlushTexels says the data is ready; it is rearranged
+// into plain rows and handed to Metal.
+
+size_t TileOffset(size_t x, size_t y)
+{
+    return ((x % 64) / 32) * 256 + ((y % 8) / 2) * 64 + ((x % 32) / 16) * 32 + (y % 2) * 16 + (x % 16);
+}
+
+void Deswizzle(const uint8_t * src, uint8_t * dst, size_t rowBytes, size_t rows)
+{
+    size_t blockHeight = 16;
+    while (blockHeight > 1 && AlignUp(rows, 8) <= 8 * blockHeight / 2)
+    {
+        blockHeight /= 2;
+    }
+    size_t tilesAcross = AlignUp(rowBytes, 64) / 64;
+    size_t blockBytes = 512 * blockHeight;
+    for (size_t y = 0; y < rows; y++)
+    {
+        size_t tileRow = y / 8;
+        size_t rowBase = (tileRow / blockHeight) * tilesAcross * blockBytes + (tileRow % blockHeight) * 512;
+        for (size_t x = 0; x < rowBytes; x += 16)
+        {
+            size_t n = rowBytes - x < 16 ? rowBytes - x : 16;
+            memcpy(dst + y * rowBytes + x, src + rowBase + (x / 64) * blockBytes + TileOffset(x, y), n);
+        }
+    }
+}
+
+void TextureFlushTexels(TextureState * t, const void * view, const void * region)
+{
+    (void)view;
+    (void)region;
+    d3_nvn_called("nvnTextureFlushTexels");
+    id<MTLTexture> texture = Metal(t);
+    if (!texture || !t->desc.pool || !t->desc.pool->memory || t->desc.target == 2)
+    {
+        return;
+    }
+    @autoreleasepool
+    {
+        FormatInfo f = Format(t->desc.format);
+        const uint8_t * src = static_cast<const uint8_t *>(t->desc.pool->memory) + t->desc.offset;
+        int faces = t->desc.target == 8 ? 6 : 1;
+        NSMutableData * plain = [NSMutableData data];
+        for (int face = 0; face < faces; face++)
+        {
+            for (int level = 0; level < t->desc.levels; level++)
+            {
+                int w = t->desc.width >> level ? t->desc.width >> level : 1;
+                int h = t->desc.height >> level ? t->desc.height >> level : 1;
+                size_t rowBytes = f.block ? (static_cast<size_t>(w) + 3) / 4 * f.bytes : static_cast<size_t>(w) * f.bytes;
+                size_t rows = f.block ? (static_cast<size_t>(h) + 3) / 4 : static_cast<size_t>(h);
+                plain.length = rowBytes * rows;
+                Deswizzle(src, static_cast<uint8_t *>(plain.mutableBytes), rowBytes, rows);
+                [texture replaceRegion:MTLRegionMake2D(0, 0, w, h)
+                           mipmapLevel:level
+                                 slice:face
+                             withBytes:plain.bytes
+                           bytesPerRow:rowBytes
+                         bytesPerImage:0];
+                src += LevelSize(f, w, h, 1);
+            }
+        }
+    }
+}
+
+// ---- samplers, and the tables that give textures and samplers their numbers ----
+
+void SamplerBuilderSetDefaults(SamplerDesc * b)
+{
+    memset(b, 0, sizeof(*b));
+    b->minFilter = 0;
+    b->magFilter = 0;
+    b->wrap[0] = b->wrap[1] = b->wrap[2] = 7;      // clamp to edge
+}
+
+void SamplerBuilderSetMinMagFilter(SamplerDesc * b, int minFilter, int magFilter) { b->minFilter = minFilter; b->magFilter = magFilter; }
+void SamplerBuilderSetWrapMode(SamplerDesc * b, int s, int t, int r) { b->wrap[0] = s; b->wrap[1] = t; b->wrap[2] = r; }
+
+MTLSamplerAddressMode Wrap(int mode)
+{
+    switch (mode)
+    {
+    case 1: return MTLSamplerAddressModeRepeat;
+    case 6: return MTLSamplerAddressModeMirrorRepeat;
+    case 2: case 3: return MTLSamplerAddressModeMirrorClampToEdge;
+    case 5: case 4: return MTLSamplerAddressModeClampToBorderColor;
+    default: return MTLSamplerAddressModeClampToEdge;
+    }
+}
+
+int SamplerInitialize(SamplerDesc * sampler, const SamplerDesc * builder)
+{
+    @autoreleasepool
+    {
+        *sampler = *builder;
+        MTLSamplerDescriptor * d = [MTLSamplerDescriptor new];
+        d.minFilter = (builder->minFilter == 0 || builder->minFilter == 2 || builder->minFilter == 4) ? MTLSamplerMinMagFilterNearest
+                                                                                                      : MTLSamplerMinMagFilterLinear;
+        d.magFilter = builder->magFilter == 0 ? MTLSamplerMinMagFilterNearest : MTLSamplerMinMagFilterLinear;
+        d.mipFilter = builder->minFilter < 2 ? MTLSamplerMipFilterNotMipmapped
+                                             : builder->minFilter < 4 ? MTLSamplerMipFilterNearest : MTLSamplerMipFilterLinear;
+        d.sAddressMode = Wrap(builder->wrap[0]);
+        d.tAddressMode = Wrap(builder->wrap[1]);
+        d.rAddressMode = Wrap(builder->wrap[2]);
+        sampler->metal = (__bridge_retained void *)[g_device newSamplerStateWithDescriptor:d];
+        return 1;
+    }
+}
+
+const int kMaxIds = 16384;
+TextureState * g_textureById[kMaxIds];
+SamplerDesc * g_samplerById[kMaxIds];
+
+void TexturePoolRegisterTexture(const void * pool, int id, TextureState * texture, const void * view)
+{
+    (void)pool;
+    (void)view;
+    if (id >= 0 && id < kMaxIds)
+    {
+        g_textureById[id] = texture;
+    }
+}
+
+void SamplerPoolRegisterSampler(const void * pool, int id, SamplerDesc * sampler)
+{
+    (void)pool;
+    if (id >= 0 && id < kMaxIds)
+    {
+        g_samplerById[id] = sampler;
+    }
+}
+
+uint64_t DeviceGetTextureHandle(const void * device, int textureId, int samplerId)
+{
+    (void)device;
+    return static_cast<uint64_t>(static_cast<uint32_t>(textureId)) << 32 | static_cast<uint32_t>(samplerId);
+}
+
+void BindTexture(void * cb, int stage, int index, uint64_t handle)
+{
+    (void)cb;
+    uint32_t textureId = static_cast<uint32_t>(handle >> 32), samplerId = static_cast<uint32_t>(handle);
+    if (stage < 0 || stage > 1 || index < 0 || index >= 16)
+    {
+        return;
+    }
+    g_draw.textures[stage][index].texture = textureId < kMaxIds ? g_textureById[textureId] : nullptr;
+    g_draw.textures[stage][index].sampler = samplerId < kMaxIds ? g_samplerById[samplerId] : nullptr;
+}
+
+// ---- small state objects ----
+
+void AttribSetDefaults(AttribState * a) { memset(a, 0, sizeof(*a)); }
+void AttribSetFormat(AttribState * a, int format, ptrdiff_t offset) { a->format = format; a->offset = static_cast<uint32_t>(offset); a->set = 1; }
+void AttribSetStreamIndex(AttribState * a, int stream) { a->stream = stream; }
+void StreamSetDefaults(StreamState * s) { s->stride = 0; s->divisor = 0; }
+void StreamSetStride(StreamState * s, ptrdiff_t stride) { s->stride = static_cast<int32_t>(stride); }
+
+void BlendSetDefaults(BlendDesc * b) { *b = BlendDesc{2, 1, 2, 1, 1, 1, 0, 0}; }      // one, zero, add
+void BlendSetBlendFunc(BlendDesc * b, int srcColor, int dstColor, int srcAlpha, int dstAlpha)
+{
+    b->srcColor = srcColor; b->dstColor = dstColor; b->srcAlpha = srcAlpha; b->dstAlpha = dstAlpha;
+}
+void BlendSetBlendEquation(BlendDesc * b, int color, int alpha) { b->opColor = color; b->opAlpha = alpha; }
+void ColorSetDefaults(ColorDesc * c) { c->blendEnable = 0; }
+void ColorSetBlendEnable(ColorDesc * c, int index, int enable)
+{
+    c->blendEnable = enable ? c->blendEnable | 1u << index : c->blendEnable & ~(1u << index);
+}
+void MaskSetDefaults(MaskDesc * m) { m->mask = 0xffffffffu; }
+void MaskSetChannelMask(MaskDesc * m, int index, int r, int g, int b, int a)
+{
+    uint32_t bits = (r ? 1u : 0) | (g ? 2u : 0) | (b ? 4u : 0) | (a ? 8u : 0);
+    m->mask = (m->mask & ~(15u << (index * 4))) | bits << (index * 4);
+}
+void PolygonSetDefaults(PolygonDesc * p) { p->cull = 0; p->frontFace = 1; p->mode = 2; }
+void PolygonSetCullFace(PolygonDesc * p, int face) { p->cull = face; }
+void PolygonSetFrontFace(PolygonDesc * p, int frontFace) { p->frontFace = frontFace; }
+void PolygonSetPolygonMode(PolygonDesc * p, int mode) { p->mode = mode; }
+
+void DepthSetDefaults(DepthDesc * d)
+{
+    memset(d, 0, sizeof(*d));
+    d->depthWrite = 1;
+    d->depthFunc = 2;       // less
+    d->frontFunc = d->backFunc = 8;                 // always
+    d->frontFail = d->frontDepthFail = d->frontPass = 1;    // keep
+    d->backFail = d->backDepthFail = d->backPass = 1;
+}
+void DepthSetDepthTestEnable(DepthDesc * d, int on) { d->depthTest = on != 0; }
+void DepthSetDepthWriteEnable(DepthDesc * d, int on) { d->depthWrite = on != 0; }
+void DepthSetDepthFunc(DepthDesc * d, int func) { d->depthFunc = func; }
+void DepthSetStencilTestEnable(DepthDesc * d, int on) { d->stencilTest = on != 0; }
+void DepthSetStencilFunc(DepthDesc * d, int face, int func)
+{
+    if (face & 1) d->frontFunc = func;
+    if (face & 2) d->backFunc = func;
+}
+void DepthSetStencilOp(DepthDesc * d, int face, int fail, int depthFail, int pass)
+{
+    if (face & 1) { d->frontFail = fail; d->frontDepthFail = depthFail; d->frontPass = pass; }
+    if (face & 2) { d->backFail = fail; d->backDepthFail = depthFail; d->backPass = pass; }
+}
+
+// ---- binding state for the next draw ----
+
+void BindVertexAttribState(void * cb, int count, const AttribState * states)
+{
+    (void)cb;
+    g_draw.attribCount = count > 16 ? 16 : count;
+    memcpy(g_draw.attribs, states, sizeof(AttribState) * g_draw.attribCount);
+}
+
+void BindVertexStreamState(void * cb, int count, const StreamState * states)
+{
+    (void)cb;
+    memcpy(g_draw.streams, states, sizeof(StreamState) * (count > 16 ? 16 : count));
+}
+
+void BindVertexBuffers(void * cb, int first, int count, const UniformBinding * ranges)
+{
+    (void)cb;
+    for (int i = 0; i < count && first + i < 16; i++)
+    {
+        g_draw.vertexBuffers[first + i] = ranges[i];
+    }
+}
+
+void BindUniformBuffer(void * cb, int stage, int index, uint64_t address, size_t size)
+{
+    (void)cb;
+    if (stage >= 0 && stage <= 1 && index >= 0 && index < 14)
+    {
+        g_draw.uniforms[stage][index] = UniformBinding{address, size};
+    }
+}
+
+// An update recorded between draws applies to the draws after it. Commands take
+// effect as they are recorded here, so the bytes are written straight away.
+void UpdateUniformBuffer(void * cb, uint64_t buffer, size_t bufferSize, ptrdiff_t offset, size_t size, const void * data)
+{
+    (void)cb;
+    (void)bufferSize;
+    if (buffer && data)
+    {
+        memcpy(reinterpret_cast<void *>(buffer + offset), data, size);
+    }
+}
+
+void BindBlendState(void * cb, const BlendDesc * b) { (void)cb; g_draw.blend = *b; }
+void BindColorState(void * cb, const ColorDesc * c) { (void)cb; g_draw.color = *c; }
+void BindChannelMaskState(void * cb, const MaskDesc * m) { (void)cb; g_draw.mask = *m; }
+void BindPolygonState(void * cb, const PolygonDesc * p) { (void)cb; g_draw.polygon = *p; }
+void BindDepthStencilState(void * cb, const DepthDesc * d) { (void)cb; g_draw.depth = *d; }
+void SetBlendColor(void * cb, const float * c) { (void)cb; memcpy(g_draw.blendColor, c, sizeof(g_draw.blendColor)); }
+void SetStencilRef(void * cb, int face, int ref) { (void)cb; (void)face; g_draw.stencilRef = ref; }
+void SetDepthRange(void * cb, float n, float f) { (void)cb; g_draw.depthRange[0] = n; g_draw.depthRange[1] = f; }
+
+void SetViewport(void * cb, int x, int y, int w, int h)
+{
+    (void)cb;
+    g_draw.viewport[0] = x; g_draw.viewport[1] = y; g_draw.viewport[2] = w; g_draw.viewport[3] = h;
+    g_draw.viewportSet = true;
+}
+
+// ---- shaders ----
+
+struct ShaderData { uint64_t data; const void * control; };
+
+NSString * CacheFolder()
+{
+    static NSString * folder;
+    if (!folder)
+    {
+        const char * env = getenv("D3_SHADER_CACHE");
+        folder = @(env ? env : D3_DEFAULT_SHADER_CACHE);
+        [[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    return folder;
+}
+
+NSMutableDictionary<NSNumber *, id> * g_functions;      // code hash -> id<MTLFunction>, or NSNull when there is none
+unsigned g_missingShaders;
+
+id<MTLFunction> FunctionFor(const void * code, size_t size, int * stage)
+{
+    uint64_t hash = 0xcbf29ce484222325ull;
+    for (size_t i = 0; i < size; i++)
+    {
+        hash = (hash ^ static_cast<const uint8_t *>(code)[i]) * 0x100000001b3ull;
+    }
+    uint32_t word0;
+    memcpy(&word0, static_cast<const uint8_t *>(code) + 0x30, 4);
+    *stage = ((word0 >> 10) & 15) == 5 ? 1 : 0;
+    if (!g_functions)
+    {
+        g_functions = [NSMutableDictionary dictionary];
+    }
+    id known = g_functions[@(hash)];
+    if (known)
+    {
+        return known == [NSNull null] ? nil : known;
+    }
+    NSString * base = [CacheFolder() stringByAppendingPathComponent:[NSString stringWithFormat:@"%016llx", hash]];
+    NSString * source = [NSString stringWithContentsOfFile:[base stringByAppendingString:@".metal"] encoding:NSUTF8StringEncoding error:nil];
+    id<MTLFunction> function = nil;
+    if (source)
+    {
+        NSError * error = nil;
+        id<MTLLibrary> library = [g_device newLibraryWithSource:source options:nil error:&error];
+        function = [library newFunctionWithName:*stage ? @"d3_fragment" : @"d3_vertex"];
+        if (!function)
+        {
+            fprintf(stderr, "metal: translated shader %016llx does not compile: %s\n", hash, error.localizedDescription.UTF8String);
+        }
+    }
+    else
+    {
+        // Leave the code where the translator will find it.
+        NSString * codePath = [base stringByAppendingString:@".code"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:codePath])
+        {
+            [[NSData dataWithBytes:code length:size] writeToFile:codePath atomically:YES];
+        }
+        g_missingShaders++;
+    }
+    g_functions[@(hash)] = function ?: [NSNull null];
+    return function;
+}
+
+int ProgramInitialize(ProgramState * p, void * device)
+{
+    (void)device;
+    memset(p, 0, sizeof(*p));
+    return 1;
+}
+
+int ProgramSetShaders(ProgramState * p, int count, const ShaderData * shaders)
+{
+    d3_nvn_called("nvnProgramSetShaders");
+    if (count < 1 || !shaders[0].data)
+    {
+        return 1;
+    }
+    @autoreleasepool
+    {
+        const void * code = reinterpret_cast<const void *>(shaders[0].data);
+        void * last = nullptr;
+        size_t size = 0;
+        d3_nvn_last_buffer(&last, &size);
+        if (last != code || size < 0x80)
+        {
+            return 1;       // the size of the code is only known from the buffer the game just made for it
+        }
+        id<MTLFunction> function = FunctionFor(code, size, &p->stage);
+        p->function = function ? (__bridge_retained void *)function : nullptr;
+        // The control block says where the shader's literal constants sit inside its code.
+        if (shaders[0].control)
+        {
+            uint32_t poolSize, poolOffset;
+            memcpy(&poolSize, static_cast<const uint8_t *>(shaders[0].control) + 0x6fc, 4);
+            memcpy(&poolOffset, static_cast<const uint8_t *>(shaders[0].control) + 0x700, 4);
+            if (poolSize && poolOffset + poolSize <= size)
+            {
+                p->literals = static_cast<const uint8_t *>(code) + poolOffset;
+                p->literalSize = poolSize;
+            }
+        }
+        return 1;
+    }
+}
+
+void BindProgram(void * cb, ProgramState * p, int stageBits)
+{
+    (void)cb;
+    (void)stageBits;
+    if (p)
+    {
+        g_draw.program[p->stage] = p;
+    }
+}
+
+// ---- pipelines ----
+
+MTLVertexFormat VertexFormat(int nvn, bool integer)
+{
+    switch (nvn)
+    {
+    case 10: return MTLVertexFormatFloat;
+    case 22: return MTLVertexFormatFloat2;
+    case 34: return MTLVertexFormatFloat3;
+    case 46: return MTLVertexFormatFloat4;
+    case 5: return MTLVertexFormatHalf;
+    case 17: return MTLVertexFormatHalf2;
+    case 41: return MTLVertexFormatHalf4;
+    case 37: return integer ? MTLVertexFormatUChar4 : MTLVertexFormatUChar4Normalized;
+    case 39: return MTLVertexFormatUChar4;
+    case 38: return MTLVertexFormatChar4Normalized;
+    case 42: return integer ? MTLVertexFormatUShort4 : MTLVertexFormatUShort4Normalized;
+    case 43: return MTLVertexFormatShort4Normalized;
+    case 44: return MTLVertexFormatUShort4;
+    case 45: return MTLVertexFormatShort4;
+    case 61: return MTLVertexFormatUInt1010102Normalized;
+    case 13: return MTLVertexFormatUChar2Normalized;
+    case 18: return MTLVertexFormatUShort2Normalized;
+    default: return MTLVertexFormatInvalid;
+    }
+}
+
+MTLBlendFactor BlendFactor(int f)
+{
+    switch (f)
+    {
+    case 1: return MTLBlendFactorZero;
+    case 2: return MTLBlendFactorOne;
+    case 3: return MTLBlendFactorSourceColor;
+    case 4: return MTLBlendFactorOneMinusSourceColor;
+    case 5: return MTLBlendFactorSourceAlpha;
+    case 6: return MTLBlendFactorOneMinusSourceAlpha;
+    case 7: return MTLBlendFactorDestinationAlpha;
+    case 8: return MTLBlendFactorOneMinusDestinationAlpha;
+    case 9: return MTLBlendFactorDestinationColor;
+    case 10: return MTLBlendFactorOneMinusDestinationColor;
+    case 11: return MTLBlendFactorSourceAlphaSaturated;
+    case 97: return MTLBlendFactorBlendColor;
+    case 98: return MTLBlendFactorOneMinusBlendColor;
+    case 99: return MTLBlendFactorBlendAlpha;
+    case 100: return MTLBlendFactorOneMinusBlendAlpha;
+    default: return MTLBlendFactorOne;
+    }
+}
+
+MTLBlendOperation BlendOp(int op)
+{
+    switch (op)
+    {
+    case 2: return MTLBlendOperationSubtract;
+    case 3: return MTLBlendOperationReverseSubtract;
+    case 4: return MTLBlendOperationMin;
+    case 5: return MTLBlendOperationMax;
+    default: return MTLBlendOperationAdd;
+    }
+}
+
+MTLCompareFunction Compare(int f)
+{
+    switch (f)
+    {
+    case 1: return MTLCompareFunctionNever;
+    case 2: return MTLCompareFunctionLess;
+    case 3: return MTLCompareFunctionEqual;
+    case 4: return MTLCompareFunctionLessEqual;
+    case 5: return MTLCompareFunctionGreater;
+    case 6: return MTLCompareFunctionNotEqual;
+    case 7: return MTLCompareFunctionGreaterEqual;
+    default: return MTLCompareFunctionAlways;
+    }
+}
+
+MTLStencilOperation StencilOp(int op)
+{
+    switch (op)
+    {
+    case 2: return MTLStencilOperationZero;
+    case 3: return MTLStencilOperationReplace;
+    case 4: return MTLStencilOperationIncrementClamp;
+    case 5: return MTLStencilOperationDecrementClamp;
+    case 6: return MTLStencilOperationInvert;
+    case 7: return MTLStencilOperationIncrementWrap;
+    case 8: return MTLStencilOperationDecrementWrap;
+    default: return MTLStencilOperationKeep;
+    }
+}
+
+struct PipelineKey {
+    void * vertex;
+    void * fragment;
+    AttribState attribs[16];
+    int32_t strides[16];
+    BlendDesc blend;
+    uint32_t blendEnable, mask;
+    uint32_t colorFormat, depthFormat;
+};
+
+NSMutableDictionary<NSData *, id> * g_pipelines;
+NSMutableDictionary<NSNumber *, id<MTLDepthStencilState>> * g_depthStates;
+
+id<MTLRenderPipelineState> Pipeline()
+{
+    id<MTLFunction> vertex = (__bridge id<MTLFunction>)g_draw.program[0]->function;
+    id<MTLFunction> fragment = (__bridge id<MTLFunction>)g_draw.program[1]->function;
+    PipelineKey key;
+    memset(&key, 0, sizeof(key));
+    key.vertex = g_draw.program[0]->function;
+    key.fragment = g_draw.program[1]->function;
+    for (MTLVertexAttribute * a in vertex.vertexAttributes)
+    {
+        NSUInteger i = a.attributeIndex;
+        if (a.active && i < 16 && i < static_cast<NSUInteger>(g_draw.attribCount))
+        {
+            key.attribs[i] = g_draw.attribs[i];
+            key.strides[g_draw.attribs[i].stream] = g_draw.streams[g_draw.attribs[i].stream].stride;
+        }
+    }
+    key.blend = g_draw.blend;
+    key.blendEnable = g_draw.color.blendEnable & 1;
+    key.mask = g_draw.mask.mask & 15;
+    key.colorFormat = static_cast<uint32_t>(Metal(g_color).pixelFormat);
+    key.depthFormat = static_cast<uint32_t>(Metal(g_depth).pixelFormat);
+    if (!g_pipelines)
+    {
+        g_pipelines = [NSMutableDictionary dictionary];
+    }
+    NSData * k = [NSData dataWithBytes:&key length:sizeof(key)];
+    id known = g_pipelines[k];
+    if (known)
+    {
+        return known == [NSNull null] ? nil : known;
+    }
+    MTLRenderPipelineDescriptor * d = [MTLRenderPipelineDescriptor new];
+    d.vertexFunction = vertex;
+    d.fragmentFunction = fragment;
+    MTLVertexDescriptor * layout = [MTLVertexDescriptor vertexDescriptor];
+    bool ok = true;
+    for (MTLVertexAttribute * a in vertex.vertexAttributes)
+    {
+        NSUInteger i = a.attributeIndex;
+        if (!a.active)
+        {
+            continue;
+        }
+        if (i >= static_cast<NSUInteger>(g_draw.attribCount) || !g_draw.attribs[i].set)
+        {
+            ok = false;     // the shader reads an input the game did not describe
+            break;
+        }
+        bool integer = a.attributeType == MTLDataTypeUInt4 || a.attributeType == MTLDataTypeInt4;
+        MTLVertexFormat format = VertexFormat(g_draw.attribs[i].format, integer);
+        if (format == MTLVertexFormatInvalid)
+        {
+            fprintf(stderr, "metal: vertex format %d is not mapped yet\n", g_draw.attribs[i].format);
+            ok = false;
+            break;
+        }
+        int stream = g_draw.attribs[i].stream;
+        layout.attributes[i].format = format;
+        layout.attributes[i].offset = g_draw.attribs[i].offset;
+        layout.attributes[i].bufferIndex = 16 + stream;
+        layout.layouts[16 + stream].stride = g_draw.streams[stream].stride;
+        layout.layouts[16 + stream].stepFunction = MTLVertexStepFunctionPerVertex;
+    }
+    d.vertexDescriptor = layout;
+    if (Metal(g_color))
+    {
+        MTLRenderPipelineColorAttachmentDescriptor * c = d.colorAttachments[0];
+        c.pixelFormat = Metal(g_color).pixelFormat;
+        c.blendingEnabled = key.blendEnable != 0;
+        c.sourceRGBBlendFactor = BlendFactor(g_draw.blend.srcColor);
+        c.destinationRGBBlendFactor = BlendFactor(g_draw.blend.dstColor);
+        c.sourceAlphaBlendFactor = BlendFactor(g_draw.blend.srcAlpha);
+        c.destinationAlphaBlendFactor = BlendFactor(g_draw.blend.dstAlpha);
+        c.rgbBlendOperation = BlendOp(g_draw.blend.opColor);
+        c.alphaBlendOperation = BlendOp(g_draw.blend.opAlpha);
+        c.writeMask = ((key.mask & 1) ? MTLColorWriteMaskRed : 0) | ((key.mask & 2) ? MTLColorWriteMaskGreen : 0) |
+                      ((key.mask & 4) ? MTLColorWriteMaskBlue : 0) | ((key.mask & 8) ? MTLColorWriteMaskAlpha : 0);
+    }
+    if (id<MTLTexture> depth = Metal(g_depth))
+    {
+        d.depthAttachmentPixelFormat = depth.pixelFormat;
+        if (depth.pixelFormat == MTLPixelFormatDepth32Float_Stencil8)
+        {
+            d.stencilAttachmentPixelFormat = depth.pixelFormat;
+        }
+    }
+    NSError * error = nil;
+    id<MTLRenderPipelineState> state = ok ? [g_device newRenderPipelineStateWithDescriptor:d error:&error] : nil;
+    if (ok && !state)
+    {
+        static int shown;
+        if (shown++ < 12)
+        {
+            fprintf(stderr, "metal: pipeline rejected: %s\n", error.localizedDescription.UTF8String);
+        }
+    }
+    g_pipelines[k] = state ?: [NSNull null];
+    return state;
+}
+
+id<MTLDepthStencilState> DepthState()
+{
+    uint64_t packed;
+    memcpy(&packed, &g_draw.depth, sizeof(packed));
+    if (!g_depthStates)
+    {
+        g_depthStates = [NSMutableDictionary dictionary];
+    }
+    id<MTLDepthStencilState> state = g_depthStates[@(packed)];
+    if (!state)
+    {
+        const DepthDesc & s = g_draw.depth;
+        MTLDepthStencilDescriptor * d = [MTLDepthStencilDescriptor new];
+        d.depthCompareFunction = s.depthTest ? Compare(s.depthFunc) : MTLCompareFunctionAlways;
+        d.depthWriteEnabled = s.depthTest && s.depthWrite;
+        if (s.stencilTest)
+        {
+            MTLStencilDescriptor * front = [MTLStencilDescriptor new];
+            front.stencilCompareFunction = Compare(s.frontFunc);
+            front.stencilFailureOperation = StencilOp(s.frontFail);
+            front.depthFailureOperation = StencilOp(s.frontDepthFail);
+            front.depthStencilPassOperation = StencilOp(s.frontPass);
+            MTLStencilDescriptor * back = [MTLStencilDescriptor new];
+            back.stencilCompareFunction = Compare(s.backFunc);
+            back.stencilFailureOperation = StencilOp(s.backFail);
+            back.depthFailureOperation = StencilOp(s.backDepthFail);
+            back.depthStencilPassOperation = StencilOp(s.backPass);
+            d.frontFaceStencil = front;
+            d.backFaceStencil = back;
+        }
+        state = [g_device newDepthStencilStateWithDescriptor:d];
+        g_depthStates[@(packed)] = state;
+    }
+    return state;
+}
+
+// ---- drawing ----
+
+void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, uint64_t indices, int baseVertex)
+{
+    (void)cb;
+    d3_nvn_called("nvnCommandBufferDrawElementsBaseVertex");
+    @autoreleasepool
+    {
+        if (!g_draw.program[0] || !g_draw.program[1] || !g_draw.program[0]->function || !g_draw.program[1]->function)
+        {
+            g_stats[kNoShader]++;
+            return;
+        }
+        MTLPrimitiveType type;
+        switch (primitive)
+        {
+        case 0: type = MTLPrimitiveTypePoint; break;
+        case 1: type = MTLPrimitiveTypeLine; break;
+        case 3: type = MTLPrimitiveTypeLineStrip; break;
+        case 4: type = MTLPrimitiveTypeTriangle; break;
+        case 5: type = MTLPrimitiveTypeTriangleStrip; break;
+        default: g_stats[kUnsupported]++; return;
+        }
+        if (indexType != 1 && indexType != 2)
+        {
+            g_stats[kUnsupported]++;
+            return;
+        }
+        if (!Metal(g_color) && !Metal(g_depth))
+        {
+            g_stats[kNoTarget]++;
+            return;
+        }
+        id<MTLRenderPipelineState> pipeline = Pipeline();
+        if (!pipeline)
+        {
+            g_stats[kNoPipeline]++;
+            return;
+        }
+        id<MTLRenderCommandEncoder> pass = Pass();
+        NSUInteger offset = 0;
+        id<MTLBuffer> indexBuffer = BufferAt(indices, static_cast<size_t>(count) * (indexType == 1 ? 2 : 4), &offset);
+        if (!pass || !indexBuffer)
+        {
+            g_stats[kNoBuffer]++;
+            return;
+        }
+        NSUInteger indexOffset = offset;
+
+        [pass setRenderPipelineState:pipeline];
+        [pass setDepthStencilState:DepthState()];
+        [pass setStencilReferenceValue:static_cast<uint32_t>(g_draw.stencilRef)];
+        [pass setBlendColorRed:g_draw.blendColor[0] green:g_draw.blendColor[1] blue:g_draw.blendColor[2] alpha:g_draw.blendColor[3]];
+        [pass setCullMode:g_draw.polygon.cull == 1 ? MTLCullModeFront : g_draw.polygon.cull == 2 ? MTLCullModeBack : MTLCullModeNone];
+        [pass setFrontFacingWinding:g_draw.polygon.frontFace ? MTLWindingCounterClockwise : MTLWindingClockwise];
+        [pass setTriangleFillMode:g_draw.polygon.mode == 1 ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
+        if (g_draw.viewportSet)
+        {
+            MTLViewport v = {static_cast<double>(g_draw.viewport[0]), static_cast<double>(g_draw.viewport[1]),
+                             static_cast<double>(g_draw.viewport[2]), static_cast<double>(g_draw.viewport[3]),
+                             g_draw.depthRange[0], g_draw.depthRange[1] > g_draw.depthRange[0] ? g_draw.depthRange[1] : 1.0};
+            [pass setViewport:v];
+        }
+
+        // Vertex data: straight from the game's pools.
+        id<MTLFunction> vertex = (__bridge id<MTLFunction>)g_draw.program[0]->function;
+        for (MTLVertexAttribute * a in vertex.vertexAttributes)
+        {
+            if (!a.active || a.attributeIndex >= 16)
+            {
+                continue;
+            }
+            int stream = g_draw.attribs[a.attributeIndex].stream;
+            id<MTLBuffer> buffer = BufferAt(g_draw.vertexBuffers[stream].address, 1, &offset);
+            if (!buffer)
+            {
+                g_stats[kNoBuffer]++;
+                return;
+            }
+            [pass setVertexBuffer:buffer offset:offset atIndex:16 + stream];
+        }
+
+        // Constant blocks (a copy per draw), literal pools, textures.
+        for (int stage = 0; stage < 2; stage++)
+        {
+            for (int i = 0; i < 14; i++)
+            {
+                const UniformBinding & u = g_draw.uniforms[stage][i];
+                if (!u.address || !u.size)
+                {
+                    continue;
+                }
+                id<MTLBuffer> copy = Snapshot(reinterpret_cast<const void *>(u.address), u.size, &offset);
+                if (!copy)
+                {
+                    continue;
+                }
+                if (stage == 0)
+                {
+                    [pass setVertexBuffer:copy offset:offset atIndex:i + 3];
+                }
+                else
+                {
+                    [pass setFragmentBuffer:copy offset:offset atIndex:i + 3];
+                }
+            }
+            const ProgramState * p = g_draw.program[stage];
+            if (p->literals)
+            {
+                id<MTLBuffer> copy = Snapshot(p->literals, p->literalSize, &offset);
+                if (copy && stage == 0)
+                {
+                    [pass setVertexBuffer:copy offset:offset atIndex:1];
+                }
+                else if (copy)
+                {
+                    [pass setFragmentBuffer:copy offset:offset atIndex:1];
+                }
+            }
+            for (int i = 0; i < 16; i++)
+            {
+                const TextureBinding & t = g_draw.textures[stage][i];
+                id<MTLTexture> texture = Metal(t.texture);
+                id<MTLSamplerState> sampler = t.sampler && t.sampler->metal ? (__bridge id<MTLSamplerState>)t.sampler->metal : nil;
+                if (!texture || texture == Metal(g_color))
+                {
+                    continue;       // nothing bound, or it is the texture being drawn into
+                }
+                if (stage == 0)
+                {
+                    [pass setVertexTexture:texture atIndex:i];
+                    if (sampler) [pass setVertexSamplerState:sampler atIndex:i];
+                }
+                else
+                {
+                    [pass setFragmentTexture:texture atIndex:i];
+                    if (sampler) [pass setFragmentSamplerState:sampler atIndex:i];
+                }
+            }
+        }
+
+        [pass drawIndexedPrimitives:type
+                         indexCount:count
+                          indexType:indexType == 1 ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32
+                        indexBuffer:indexBuffer
+                  indexBufferOffset:indexOffset
+                      instanceCount:1
+                         baseVertex:baseVertex
+                       baseInstance:0];
+        g_stats[kDrawn]++;
+    }
+}
+
 // ---- presenting ----
 
 const char * kPresentSource =
@@ -470,6 +1456,20 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
         FlushClears();
         g_color = g_depth = nullptr;
         g_frame++;
+        g_scratchUsed = 0;
+        if (g_frame % 300 == 0 && getenv("D3_METAL_STATS"))
+        {
+            fprintf(stderr, "metal: frame %u, %u shaders without a translation; last 300 frames:", g_frame, g_missingShaders);
+            for (int i = 0; i < kStatCount; i++)
+            {
+                if (g_stats[i])
+                {
+                    fprintf(stderr, " [%s: %u]", kStatNames[i], g_stats[i]);
+                }
+                g_stats[i] = 0;
+            }
+            fputc('\n', stderr);
+        }
         id<MTLTexture> source = index >= 0 && index < window->count ? Metal(window->textures[index]) : nil;
         id<CAMetalDrawable> drawable = source ? [g_layer nextDrawable] : nil;
         if (drawable)
@@ -511,6 +1511,7 @@ extern "C" const d3_nvn_entry d3_nvn_metal_overrides[] = {
     {"nvnTextureBuilderSetFlags", (d3_nvn_function)TextureBuilderSetFlags},
     {"nvnTextureBuilderSetLevels", (d3_nvn_function)TextureBuilderSetLevels},
     {"nvnTextureBuilderSetStorage", (d3_nvn_function)TextureBuilderSetStorage},
+    {"nvnTextureBuilderSetSwizzle", (d3_nvn_function)TextureBuilderSetSwizzle},
     {"nvnTextureBuilderGetStorageSize", (d3_nvn_function)TextureBuilderGetStorageSize},
     {"nvnTextureBuilderGetStorageAlignment", (d3_nvn_function)TextureBuilderGetStorageAlignment},
     {"nvnTextureInitialize", (d3_nvn_function)TextureInitialize},
@@ -518,6 +1519,58 @@ extern "C" const d3_nvn_entry d3_nvn_metal_overrides[] = {
     {"nvnTextureGetWidth", (d3_nvn_function)TextureGetWidth},
     {"nvnTextureGetHeight", (d3_nvn_function)TextureGetHeight},
     {"nvnTextureGetFormat", (d3_nvn_function)TextureGetFormat},
+    {"nvnTextureFlushTexels", (d3_nvn_function)TextureFlushTexels},
+    {"nvnMemoryPoolInitialize", (d3_nvn_function)PoolInitialize},
+    {"nvnMemoryPoolFinalize", (d3_nvn_function)PoolFinalize},
+    {"nvnSamplerBuilderSetDefaults", (d3_nvn_function)SamplerBuilderSetDefaults},
+    {"nvnSamplerBuilderSetMinMagFilter", (d3_nvn_function)SamplerBuilderSetMinMagFilter},
+    {"nvnSamplerBuilderSetWrapMode", (d3_nvn_function)SamplerBuilderSetWrapMode},
+    {"nvnSamplerInitialize", (d3_nvn_function)SamplerInitialize},
+    {"nvnTexturePoolRegisterTexture", (d3_nvn_function)TexturePoolRegisterTexture},
+    {"nvnSamplerPoolRegisterSampler", (d3_nvn_function)SamplerPoolRegisterSampler},
+    {"nvnDeviceGetTextureHandle", (d3_nvn_function)DeviceGetTextureHandle},
+    {"nvnCommandBufferBindTexture", (d3_nvn_function)BindTexture},
+    {"nvnVertexAttribStateSetDefaults", (d3_nvn_function)AttribSetDefaults},
+    {"nvnVertexAttribStateSetFormat", (d3_nvn_function)AttribSetFormat},
+    {"nvnVertexAttribStateSetStreamIndex", (d3_nvn_function)AttribSetStreamIndex},
+    {"nvnVertexStreamStateSetDefaults", (d3_nvn_function)StreamSetDefaults},
+    {"nvnVertexStreamStateSetStride", (d3_nvn_function)StreamSetStride},
+    {"nvnBlendStateSetDefaults", (d3_nvn_function)BlendSetDefaults},
+    {"nvnBlendStateSetBlendFunc", (d3_nvn_function)BlendSetBlendFunc},
+    {"nvnBlendStateSetBlendEquation", (d3_nvn_function)BlendSetBlendEquation},
+    {"nvnColorStateSetDefaults", (d3_nvn_function)ColorSetDefaults},
+    {"nvnColorStateSetBlendEnable", (d3_nvn_function)ColorSetBlendEnable},
+    {"nvnChannelMaskStateSetDefaults", (d3_nvn_function)MaskSetDefaults},
+    {"nvnChannelMaskStateSetChannelMask", (d3_nvn_function)MaskSetChannelMask},
+    {"nvnPolygonStateSetDefaults", (d3_nvn_function)PolygonSetDefaults},
+    {"nvnPolygonStateSetCullFace", (d3_nvn_function)PolygonSetCullFace},
+    {"nvnPolygonStateSetFrontFace", (d3_nvn_function)PolygonSetFrontFace},
+    {"nvnPolygonStateSetPolygonMode", (d3_nvn_function)PolygonSetPolygonMode},
+    {"nvnDepthStencilStateSetDefaults", (d3_nvn_function)DepthSetDefaults},
+    {"nvnDepthStencilStateSetDepthTestEnable", (d3_nvn_function)DepthSetDepthTestEnable},
+    {"nvnDepthStencilStateSetDepthWriteEnable", (d3_nvn_function)DepthSetDepthWriteEnable},
+    {"nvnDepthStencilStateSetDepthFunc", (d3_nvn_function)DepthSetDepthFunc},
+    {"nvnDepthStencilStateSetStencilTestEnable", (d3_nvn_function)DepthSetStencilTestEnable},
+    {"nvnDepthStencilStateSetStencilFunc", (d3_nvn_function)DepthSetStencilFunc},
+    {"nvnDepthStencilStateSetStencilOp", (d3_nvn_function)DepthSetStencilOp},
+    {"nvnCommandBufferBindVertexAttribState", (d3_nvn_function)BindVertexAttribState},
+    {"nvnCommandBufferBindVertexStreamState", (d3_nvn_function)BindVertexStreamState},
+    {"nvnCommandBufferBindVertexBuffers", (d3_nvn_function)BindVertexBuffers},
+    {"nvnCommandBufferBindUniformBuffer", (d3_nvn_function)BindUniformBuffer},
+    {"nvnCommandBufferUpdateUniformBuffer", (d3_nvn_function)UpdateUniformBuffer},
+    {"nvnCommandBufferBindBlendState", (d3_nvn_function)BindBlendState},
+    {"nvnCommandBufferBindColorState", (d3_nvn_function)BindColorState},
+    {"nvnCommandBufferBindChannelMaskState", (d3_nvn_function)BindChannelMaskState},
+    {"nvnCommandBufferBindPolygonState", (d3_nvn_function)BindPolygonState},
+    {"nvnCommandBufferBindDepthStencilState", (d3_nvn_function)BindDepthStencilState},
+    {"nvnCommandBufferSetBlendColor", (d3_nvn_function)SetBlendColor},
+    {"nvnCommandBufferSetStencilRef", (d3_nvn_function)SetStencilRef},
+    {"nvnCommandBufferSetDepthRange", (d3_nvn_function)SetDepthRange},
+    {"nvnCommandBufferSetViewport", (d3_nvn_function)SetViewport},
+    {"nvnProgramInitialize", (d3_nvn_function)ProgramInitialize},
+    {"nvnProgramSetShaders", (d3_nvn_function)ProgramSetShaders},
+    {"nvnCommandBufferBindProgram", (d3_nvn_function)BindProgram},
+    {"nvnCommandBufferDrawElementsBaseVertex", (d3_nvn_function)DrawElementsBaseVertex},
     {"nvnWindowBuilderSetDefaults", (d3_nvn_function)WindowBuilderSetDefaults},
     {"nvnWindowBuilderSetPresentInterval", (d3_nvn_function)WindowBuilderSetPresentInterval},
     {"nvnWindowBuilderSetTextures", (d3_nvn_function)WindowBuilderSetTextures},

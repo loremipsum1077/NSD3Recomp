@@ -119,6 +119,12 @@ static ptrdiff_t BufferGetMemoryOffset(const BufferState * buffer) { return buff
 static PoolState * BufferGetMemoryPool(const BufferState * buffer) { return buffer->pool; }
 static size_t BufferGetSize(const BufferState * buffer) { return buffer->size; }
 
+void d3_nvn_last_buffer(void ** memory, size_t * size)
+{
+    *memory = BufferMap(&g_lastBuffer);
+    *size = g_lastBuffer.size;
+}
+
 // ---- shaders ----
 // The driver compiles nothing. For studying the game's shaders, D3_SHADER_DUMP=<folder>
 // writes each one as it is handed over: NNNN.code is the GPU program (its size is that

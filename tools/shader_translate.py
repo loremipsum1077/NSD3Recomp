@@ -3,6 +3,12 @@
 
     python3 tools/shader_translate.py FILE.glslc              # print one translation
     python3 tools/shader_translate.py --all FOLDER OUTFOLDER   # translate every .glslc
+    python3 tools/shader_translate.py --cache FOLDER           # fill the run-time cache
+
+The run-time cache: the Metal driver looks for <hash>.metal in the cache folder for
+each shader the game creates, and writes <hash>.code when it is missing. --cache
+translates every .code that has no .metal yet (and writes <hash>.failed with the
+reason when it cannot).
 
 How it works. The GPU code is a register machine: 32-bit registers r0..r254 that
 hold either a float or an integer, and one-bit predicates p0..p6. The translation
@@ -18,8 +24,8 @@ branch becomes a loop around a `switch` on the block number instead.
 
 What a translated shader expects from the renderer:
   - vertex inputs as attribute(L) for each input location L;
-  - constant block c[N] as buffer(N) (the game's blocks start at c[3]; c[1] is the
-    block the Switch's graphics driver fills in, see docs/SHADERS.md);
+  - constant block c[N] as buffer(N). The game's blocks start at c[3]. c[1] is the
+    shader's own pool of literal constants, stored after its code (docs/SHADERS.md);
   - texture and sampler with binding B as texture(B) and sampler(B);
   - values passed from vertex to fragment shader as user(locnL).
 
@@ -55,10 +61,27 @@ def flit(x):
     return f"as_type<float>(0x{struct.unpack('<I', struct.pack('<f', x))[0]:08x}u)"
 
 
+class CodeOnly:
+    """A shader known only by its GPU code, as the driver receives it. The program
+    header says which kind it is: bits 10-13 of its first word are 1 for a vertex
+    shader and 5 for a fragment shader."""
+
+    def __init__(self, code):
+        self.code = code
+        kind = (struct.unpack_from("<I", code, 0x30)[0] >> 10) & 15
+        if kind not in (1, 5):
+            raise ValueError(f"shader kind {kind} is neither vertex nor fragment")
+        self.stage = 0 if kind == 1 else 1
+
+
+INTEGER_USERS = {"i2f", "i2i", "iadd", "iadd3", "shl", "shr", "xmad", "lop", "lop32i", "lop3", "isetp", "imnmx", "bfi"}
+
+
 class Translator:
     def __init__(self, sh):
         self.sh = sh
         self.fragment = sh.stage == 1
+        self.integer_inputs = set()
         self.regs, self.preds = set(), set()
         self.cbufs, self.textures = set(), {}
         self.inputs, self.outputs = set(), set()
@@ -171,8 +194,36 @@ class Translator:
         if 0x80 <= off < 0x280:
             loc = (off - 0x80) // 16
             self.inputs.add(loc)
+            if loc in self.integer_inputs:
+                return f"as_type<float>(in.a{loc}.{comp})"     # keep the integer's bits
             return f"in.a{loc}.{comp}"
         raise KeyError(f"attribute offset {off:#x}")
+
+    def find_integer_inputs(self, ins):
+        """Vertex inputs the shader treats as integers (bone indices, packed normals).
+        The code does not declare input types, so they are recognised by use: a
+        register loaded from an input and then consumed by an integer instruction."""
+        origin = {}
+        for pc, w, t in ins:
+            if not t:
+                continue
+            op = gm107.mnemonic(t)
+            regs = [x for x in t if x[0] == "reg" and x[1] == "r"]
+            if op == "ld":
+                mem = next((x for x in t if x[0] == "mem" and x[1] == "a" and x[3] in (None, 255)), None)
+                if mem and regs and 0x80 <= mem[4] < 0x280:
+                    origin[regs[0][2]] = (mem[4] - 0x80) // 16
+                elif regs:
+                    origin.pop(regs[0][2], None)
+                continue
+            if op in INTEGER_USERS:
+                for r in regs[1:]:
+                    if r[2] in origin:
+                        self.integer_inputs.add(origin[r[2]])
+            if op == "mov" and len(regs) == 2 and regs[1][2] in origin:
+                origin[regs[0][2]] = origin[regs[1][2]]
+            elif regs and op not in ("st", "bra", "kil", "exit"):
+                origin.pop(regs[0][2], None)
 
     def attribute_out(self, off):
         comp = "xyzw"[off % 16 // 4]
@@ -404,6 +455,8 @@ class Translator:
         def land(target):
             return next((pc for pc in pcs if pc >= target), None)
 
+        if not self.fragment:
+            self.find_integer_inputs(ins)
         targets = sorted({land(x[1]) for _, _, t in ins if t for x in t if x[0] == "target"} - {None})
         backward = any(x[1] <= pc for pc, _, t in ins if t for x in t if x[0] == "target")
         starts = sorted(set(targets) | ({ins[0][0]} if ins else set()))
@@ -480,7 +533,8 @@ class Translator:
                 code += ["        " + l for l in text]
                 code.append("    }")
         L += ["#include <metal_stdlib>", "using namespace metal;", ""]
-        io = lambda locs, name: [f"    float4 a{l} [[{name.format(l=l)}]];" for l in sorted(locs)]
+        io = lambda locs, name: [f"    {'uint4' if name.startswith('attribute') and l in self.integer_inputs else 'float4'} a{l} [[{name.format(l=l)}]];"
+                                 for l in sorted(locs)]
         if self.fragment:
             L += ["struct FIn {", "    float4 position [[position]];"] + io(self.inputs, "user(locn{l})") + ["};", ""]
             L += ["struct FOut {", "    float depth [[depth(any)]];" if depth_only else "    float4 color [[color(0)]];", "};", ""]
@@ -517,12 +571,35 @@ def translate(blob):
     return t.translate(), t.unhandled
 
 
+def fill_cache(folder):
+    folder = Path(folder)
+    done = failed = 0
+    for f in sorted(folder.glob("*.code")):
+        out = f.with_suffix(".metal")
+        if out.exists() or f.with_suffix(".failed").exists():
+            continue
+        try:
+            t = Translator(CodeOnly(f.read_bytes()))
+            text, unhandled = t.translate(), t.unhandled
+        except Exception as e:                      # one bad shader must not stop the rest
+            text, unhandled = "", [f"translator error: {e}"]
+        if unhandled:
+            f.with_suffix(".failed").write_text("\n".join(sorted(set(unhandled))) + "\n")
+            failed += 1
+        else:
+            out.write_text(text)
+            done += 1
+    print(f"{done} shaders translated, {failed} could not be; cache now holds {len(list(folder.glob('*.metal')))}")
+
+
 def main():
     if len(sys.argv) == 2:
         text, unhandled = translate(Path(sys.argv[1]).read_bytes())
         print(text)
         for u in unhandled:
             print("// NOT TRANSLATED:", u)
+    elif len(sys.argv) == 3 and sys.argv[1] == "--cache":
+        fill_cache(sys.argv[2])
     elif len(sys.argv) == 4 and sys.argv[1] == "--all":
         import collections
         out = Path(sys.argv[3])

@@ -97,6 +97,16 @@ instruction reference; `--summary` checks them against every captured shader:
 | Constant block with binding B is `c[B + 3]` | 95,166 of 96,798 constant reads resolve to a named constant; the rest are `c[1]` (below) |
 | Texture handle H is the sampler with binding `(H - 8) / 2` | All 1,085 texture reads resolve to a named sampler |
 
+## Literal constants: `c[1]`
+
+Constant reads from block `c[1]` are not a block the game declares. They are the
+shader's own literal numbers that do not fit inside an instruction (for example
+2/255, used to unpack a normal stored as bytes). The compiler puts them in a pool
+after the code. The control block holds the pool's size at offset 0x6fc and its
+position within the code at 0x700; in all 1,010 captured shaders every `c[1]` read
+falls inside that pool, and shaders without such reads have an empty pool. The
+driver binds the pool as buffer 1.
+
 ## Control flow
 
 - 432 of 1,010 shaders have no branch at all.
@@ -148,11 +158,8 @@ first suspects if a picture comes out wrong:
 
 ## Open questions
 
-- **`c[1]`.** 1,632 constant reads use block `c[1]`, which the game does not declare:
-  it is supplied by the Switch's graphics driver. Vertex shaders multiply the output
-  position by `c[1][0]`. What the driver puts there has to be established before any
-  translated vertex shader can be trusted.
-- The program header and the control block have not been decoded.
+- The program header has not been decoded beyond the shader kind, and the control
+  block beyond the literal pool's position.
 - 3,946 constant reads use a computed offset (arrays such as bone matrices); they
   decode, but are not yet tied to names.
 - Shaders loaded after start-up have not been looked at; an area may use

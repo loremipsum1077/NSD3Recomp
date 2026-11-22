@@ -5,6 +5,23 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# A private copy of the C++ standard library.
+#
+# The game defines the global operator new and delete on its own heap, as it does on
+# the Switch, where the C++ library is linked into the program. With the system's
+# shared C++ library that cannot work: either the system's libraries end up
+# allocating from the game's heap, or memory allocated on one side is freed on the
+# other. So this program gets its own static C++ library, built against the same
+# headers, and shares no C++ symbols with the system. It comes from an LLVM
+# installation (on macOS: `brew install llvm`).
+set(D3_LIBCXX_ROOT "/opt/homebrew/opt/llvm" CACHE PATH "LLVM installation providing a static libc++")
+if(NOT EXISTS "${D3_LIBCXX_ROOT}/lib/c++/libc++.a")
+    message(FATAL_ERROR "No static libc++ in ${D3_LIBCXX_ROOT}. Install LLVM (brew install llvm) or set D3_LIBCXX_ROOT.")
+endif()
+add_compile_options(
+    "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-nostdinc++>"
+    "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:SHELL:-isystem ${D3_LIBCXX_ROOT}/include/c++/v1>")
+
 include(cmake/Decomp.cmake)
 # Target d3_decomp: the decomp's sources (game and middleware).
 include(cmake/DecompSources.cmake)
@@ -34,7 +51,10 @@ target_link_libraries(d3_platform PRIVATE SDL2::SDL2)
 set_source_files_properties(src/gfx/metal/nvn_metal.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 # Where saves go until milestone 7 settles it. Ignored by git.
 set(D3_SAVE_DIR "${PROJECT_SOURCE_DIR}/save" CACHE PATH "Folder for save data")
-target_compile_definitions(d3_platform PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_DEFAULT_SAVE_DIR="${D3_SAVE_DIR}")
+# Translated shaders, made from the player's own game data. Ignored by git.
+set(D3_SHADER_CACHE "${PROJECT_SOURCE_DIR}/cache/shaders" CACHE PATH "Folder for translated shaders")
+target_compile_definitions(d3_platform PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_DEFAULT_SAVE_DIR="${D3_SAVE_DIR}"
+    D3_DEFAULT_SHADER_CACHE="${D3_SHADER_CACHE}")
 set_target_properties(d3_platform PROPERTIES CXX_STANDARD 17)
 
 # Data that exists in the original program but that the decomp does not define yet,
@@ -77,6 +97,10 @@ if(TARGET d3_extracted)
         $<TARGET_OBJECTS:d3_decomp>
         $<TARGET_OBJECTS:d3_replace> $<TARGET_OBJECTS:d3_extracted>)
     target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_WITH_GAME)
+    # Link the private C++ library and export nothing but main, so that no C++ symbol
+    # of this program is shared with the system's libraries (see D3_LIBCXX_ROOT above).
+    target_link_options(d3 PRIVATE -nostdlib++ "-Wl,-exported_symbol,_main")
+    target_link_libraries(d3 PRIVATE "${D3_LIBCXX_ROOT}/lib/c++/libc++.a" "${D3_LIBCXX_ROOT}/lib/c++/libc++abi.a")
     target_link_libraries(d3 PRIVATE SDL2::SDL2 "-framework Metal" "-framework QuartzCore" "-framework Foundation"
         "-framework ImageIO" "-framework CoreGraphics")
     set_target_properties(d3_decomp PROPERTIES EXCLUDE_FROM_ALL OFF)

@@ -136,6 +136,22 @@ Nothing in the decomp is edited. Three mechanisms, all in `src/compat/` and
 The decomp's top-level `include/` directory is not used: it rebinds libc names to
 Switch symbols.
 
+## The private C++ library
+
+The game defines the global `operator new` and `operator delete` on its own heap. On
+the Switch that is harmless, because the C++ standard library is linked into the
+program. On macOS the standard library is a shared system library, and both ways of
+living with it failed: if the game's operators are visible, Apple's own frameworks
+start allocating from the game's heap on their threads and corrupt it; if they are
+hidden, memory allocated by the program is freed by the shared library with the
+system allocator, which aborts.
+
+So the program links its own static C++ library (from an LLVM installation,
+`D3_LIBCXX_ROOT`), compiles against that library's headers, and exports no symbol
+except `main`. The system's libraries keep the system's C++ library and allocator.
+C++ objects must not cross between the two; nothing does (SDL is C, Metal is
+Objective-C).
+
 ## Rules for platform-layer code
 
 Learned the hard way while bringing startup up:

@@ -5,8 +5,10 @@ decompiled source from [NSD3Decomp](https://github.com/loremipsum1077/NSD3Decomp
 for desktop platforms. macOS on Apple silicon is the first target.
 
 **Status: the game does not run yet.** The decomp compiles and links into one
-macOS executable. It starts, loads its data, opens a window and reads the
-keyboard and a game controller, but draws nothing yet and has no sound. See the [roadmap](docs/ROADMAP.md).
+macOS executable. It starts, loads its data, and draws the game's Hero Creation
+menu in a window through Metal, with keyboard and controller input. There is no
+sound, parts of the picture are still missing, and nothing beyond that menu has
+been tried. See the [roadmap](docs/ROADMAP.md).
 
 ## What is and is not in this repository
 
@@ -45,8 +47,17 @@ cmake --build build/macos
 ./build/macos/d3
 ```
 
-Requires CMake 3.24+, Ninja, the Xcode command line tools and SDL2
-(`brew install sdl2`).
+Requires CMake 3.24+, Ninja, the Xcode command line tools, SDL2 and LLVM
+(`brew install sdl2 llvm`; LLVM supplies the static C++ library the program links).
+
+The first run draws nothing: the game's shaders have to be translated once.
+Run the program for half a minute, quit, then:
+
+```sh
+python3 tools/shader_translate.py --cache cache/shaders
+```
+
+and run it again. Repeat when a new area shows missing objects.
 
 ## Controls
 
