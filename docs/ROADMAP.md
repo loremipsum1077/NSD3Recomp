@@ -89,7 +89,7 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] `nn::account`: one fixed local user with no network account
 - [x] `nn::hid`: no controller connected
 - [x] Network interface, wireless, amiibo, friends, add-on content, parental controls: report unavailable or empty
-- [ ] Confirm the main menu is reached. Scripted button presses now get past the opening videos and the game starts drawing interface windows and text, but which screen it is cannot be told until something is drawn
+- [x] Main menu reached and driven by input (milestone 4 screenshots). Earlier note: Scripted button presses now get past the opening videos and the game starts drawing interface windows and text, but which screen it is cannot be told until something is drawn
 - [ ] 92 stand-ins remain (sockets and TLS, on-screen keyboard, web pages, shop, error dialogs, 23 game functions with no source). None is reached during startup
 - [ ] Not yet verified: none of the new `nn::os` or `nn::fs` code has tests, and only the paths startup has reached so far have run at all
 
@@ -114,10 +114,11 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Part 3, textures: contents rearranged from the Switch GPU's tiled layout; compressed formats; samplers; channel remapping (fonts)
 - [x] Shader cache: the driver writes each shader's code to `cache/shaders/`; `python3 tools/shader_translate.py --cache cache/shaders` translates what is missing. 1,268 of the 1,312 start-up shaders translate
 - [x] A private static C++ library for the whole program (see architecture): without it the game's replacement of `operator new` collided with the system's libraries
-- [ ] Known defects on Hero Creation: the hero's body is not drawn (its weapons are), and the class video panel is solid green
-- [ ] 44 start-up shaders do not translate (about 13 draws a frame are skipped for it)
+- [x] Hero Creation renders correctly apart from the video panel: hero models, lighting, effects and colour grading all match what the screen should look like
+- [ ] The class video panel is solid green. The video is never started: its data file (`enUS_CommonCutscene.cpk`) is never opened and no video frame is ever handed to the driver. Not a drawing fault. Suspected, not confirmed: videos are tied to sound, which is off
+- [ ] 2 start-up shaders do not translate (three integer instruction forms)
 - [ ] The first run has no translated shaders and draws nothing; translation should happen inside the program
-- [ ] Not implemented in the driver: scissor, stencil-cull criteria, 3D and array textures, texture views, non-indexed draws
+- [ ] Not implemented in the driver: scissor, stencil-cull criteria, array textures, mip levels of 3D textures, texture views, non-indexed draws
 - [ ] Not checked: anything beyond Hero Creation; resizing the window; whether colours are exact (sRGB handling was not examined)
 - [ ] UI rendering and fonts
 - [ ] Not verified: input with a real controller (none was attached), window close, and whether the game's menus respond to the keys as mapped

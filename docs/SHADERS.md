@@ -134,6 +134,8 @@ taken branch skips over; a shader with a backward branch becomes a loop around a
 
 Result on the 1,010 captured shaders (2026-11-22):
 
+- Update, same day: with the fixes listed under "What drawing taught" below, 1,310 of
+  the 1,312 start-up shaders translate and compile, and they draw the menu correctly.
 - **990 translate completely, and all 990 compile** with the system's Metal
   framework (`tools/mslcheck.m`; Xcode's separate Metal compiler is not installed
   on the development machine, and is not needed).
@@ -155,6 +157,25 @@ first suspects if a picture comes out wrong:
 | Range reduction before sine and exponent (`rro`) can be skipped | The host functions accept any argument |
 | A compare's second predicate output receives the opposite result | Memory; rarely used |
 | Interpolated inputs are already perspective-correct in Metal, so the shader's own multiply by depth is dropped | Reasoned from how both pipelines work |
+
+## What drawing taught
+
+Things that only showed up once translated shaders were drawing (2026-11-22):
+
+- **Where the code ends.** After the instructions come the literal pool and padding,
+  and those bytes often decode as plausible instructions. The control block gives the
+  end of the instructions at offset 0x6f8; the driver cuts the code there before the
+  translator sees it. Most earlier "unsupported instruction" reports were this.
+- **The vertex number** is read as an attribute at `a[0x2fc]` (the instance number at
+  `a[0x2f8]`). Full-screen passes build their corners from it.
+- **3D textures are laid out differently from 2D ones**: blocks are one tile high and
+  up to 16 slices deep. Read off the game's 64x64x64 colour lookup table, whose
+  contents are nearly their own coordinates.
+- **The game's gamma pass samples the texture it is drawing into.** The Switch's GPU
+  allows that for one-to-one passes; Metal needs a copy.
+- The inferred rules for texture reads, literal pools, integer inputs, interpolation
+  and the 16-bit multiply pairs all produce a correct picture. Still unconfirmed:
+  depth-only shaders, `fmnmx`, and gather.
 
 ## Open questions
 

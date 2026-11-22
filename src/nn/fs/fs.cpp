@@ -203,6 +203,12 @@ Result OpenFile(FileHandle * out, const char * path, int mode)
         return NotMounted();
     }
     int fd = open(host.c_str(), (mode & 2) ? O_RDWR : O_RDONLY);
+    // D3_FS_TRACE=1 lists every file the game opens, and which ones were not there.
+    static const bool trace = getenv("D3_FS_TRACE") != nullptr;
+    if (trace)
+    {
+        fprintf(stderr, "fs: open %s%s\n", path, fd < 0 ? "  (not found)" : "");
+    }
     if (fd < 0)
     {
         return FromErrno();
