@@ -152,6 +152,19 @@ except `main`. The system's libraries keep the system's C++ library and allocato
 C++ objects must not cross between the two; nothing does (SDL is C, Metal is
 Objective-C).
 
+## Zero-copy graphics memory, and where it stops
+
+The game owns the memory of every graphics pool, and the Metal driver wraps those
+pages directly, so static meshes are drawn without copying anything. Two things had
+to be added for memory the game rewrites:
+
+- constant blocks are copied for every draw (they change between draws);
+- draws of up to 6,000 indices copy their vertices and indices when recorded, because
+  the game rewrites its per-frame geometry later in the same frame.
+
+Each frame also waits for the GPU before the game continues, since the next frame's
+data goes into the same memory.
+
 ## Rules for platform-layer code
 
 Learned the hard way while bringing startup up:

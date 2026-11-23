@@ -115,12 +115,13 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Shader cache: the driver writes each shader's code to `cache/shaders/`; `python3 tools/shader_translate.py --cache cache/shaders` translates what is missing. 1,268 of the 1,312 start-up shaders translate
 - [x] A private static C++ library for the whole program (see architecture): without it the game's replacement of `operator new` collided with the system's libraries
 - [x] Hero Creation renders correctly apart from the video panel: hero models, lighting, effects and colour grading all match what the screen should look like
-- [ ] The class video panel is solid green. No video frame is ever handed to the driver, so this is not a drawing fault: playback is not running. The video archives are opened at start-up (`enUS_CommonCutscene.cpk` and the per-act ones), so the data is found. Suspected, not confirmed: playback is tied to sound, which is off
+- [ ] The class video panel is solid green. No video frame is ever handed to the driver, so this is not a drawing fault: playback is not running. The video archives are opened at start-up (`enUS_CommonCutscene.cpk` and the per-act ones), so the data is found. Videos as such do work: the owner saw cinematics playing in copies of the game started with an empty save folder. Why this panel's video does not start is unknown
 - [ ] 2 start-up shaders do not translate (three integer instruction forms)
 - [ ] The first run has no translated shaders and draws nothing; translation should happen inside the program
 - [x] Plain-row ("linear") textures: row size reported to the game and contents uploaded as rows
 - [ ] Not implemented in the driver: scissor, stencil-cull criteria, array textures, mip levels of 3D textures, texture views, non-indexed draws
-- [ ] Each frame waits for the GPU to finish before the game continues. Simple and safe, but it will cost frame rate on heavier scenes
+- [ ] Each frame waits for the GPU to finish before the game continues, and small draws copy their data. Both are simple and safe and both cost time; neither has been measured on a heavy scene
+- [x] The queue's finish request is honoured (recorded draws are completed before the game continues)
 - [ ] Not checked: anything beyond Hero Creation; resizing the window; whether colours are exact (sRGB handling was not examined)
 - [ ] UI rendering and fonts
 - [ ] Not verified: input with a real controller (none was attached), window close, and whether the game's menus respond to the keys as mapped
@@ -135,7 +136,7 @@ walk under stick input. The game wrote account, profile and hero files to `save/
 - [x] World, hero, lighting and shadows, HUD and minimap are drawn
 - [x] Movement with the left stick
 - [x] Attacking: the A button plays the attack and a monster walks into view. Whether hits land and monsters die has not been confirmed
-- [ ] **Cloth pieces on the hero are drawn stretched into long streaks.** Established: the streaks are the hero's cloth draws (they vanish when draws using two vertex streams are skipped); the shader translation, the constants and the vertex layout for those draws check out; frames now wait for the GPU, which ruled out memory being overwritten early. Not established: why some cloth vertices sit far from the rest. The simulation's output had one vertex 5.7 units from its cloth's centre on the Hero Creation screen. The decomp lists three cloth functions as not matching the original (`Cloth::CopyToAsyncVertices`, `Cloth::Staple`, `ClothUpdate`), which makes them the next place to look
+- [x] Cloth streaks fixed. The cloth simulation, its vertex data, the shader and its constants were all correct at the moment each draw was recorded. The game rewrites the memory behind its per-frame geometry later in the same frame, and the driver, which copies nothing, was drawing from the later contents. Small draws now use a copy of their vertices and indices taken when they are recorded (`src/gfx/metal/nvn_metal.mm`). How the Switch's driver avoids the same problem was not established; the three non-matching cloth functions in the decomp were not at fault
 - [ ] Picking things up, talking to characters, in-game menus: none tried
 - (Not a defect: the empty globe is the Barbarian's Fury, which starts empty.)
 - [ ] Whether a saved hero loads again on the next run: not checked (the second run created another hero)

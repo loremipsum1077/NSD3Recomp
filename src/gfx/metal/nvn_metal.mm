@@ -356,7 +356,7 @@ id<MTLBuffer> BufferAt(uint64_t address, size_t size, NSUInteger * offset)
 // after the frame is submitted, so each draw gets its own copy. The copies live in
 // large buffers that are reused a few frames later.
 const int kScratchBuffers = 4;
-const NSUInteger kScratchSize = 32 << 20;
+const NSUInteger kScratchSize = 96 << 20;
 id<MTLBuffer> g_scratch[kScratchBuffers];
 NSUInteger g_scratchUsed;
 
@@ -1438,6 +1438,47 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
         }
         NSUInteger indexOffset = offset;
 
+        // Small draws are drawn from a copy of their vertices and indices, taken now.
+        // The game rewrites the memory behind its per-frame geometry (cloth, effects,
+        // interface) later in the same frame, after recording the draw but before
+        // Metal has run it; without the copy such draws pick up the later contents.
+        // Large draws are static meshes and are read in place.
+        const int kCopyIndexLimit = 6000;
+        const size_t kCopyByteLimit = 256 << 10;
+        bool copied = false;
+        uint32_t maxIndex = 0;
+        if (count <= kCopyIndexLimit)
+        {
+            for (int k = 0; k < count; k++)
+            {
+                uint32_t idx = indexType == 1 ? reinterpret_cast<const uint16_t *>(indices)[k] : reinterpret_cast<const uint32_t *>(indices)[k];
+                maxIndex = idx > maxIndex ? idx : maxIndex;
+            }
+            copied = baseVertex >= 0;
+            // Every stream the shader reads must be small enough, or none is copied:
+            // the copies start at the draw's first vertex and the originals do not.
+            size_t total = 0;
+            id<MTLFunction> vf = (__bridge id<MTLFunction>)g_draw.program[0]->function;
+            for (MTLVertexAttribute * a in vf.vertexAttributes)
+            {
+                if (!a.active || a.attributeIndex >= 16)
+                {
+                    continue;
+                }
+                int stream = g_draw.attribs[a.attributeIndex].stream;
+                size_t bytes = static_cast<size_t>(g_draw.streams[stream].stride) * (static_cast<size_t>(maxIndex) + 1);
+                total += bytes;
+                if (!g_draw.streams[stream].stride || bytes > kCopyByteLimit || !g_draw.vertexBuffers[stream].address)
+                {
+                    copied = false;
+                }
+            }
+            if (g_scratchUsed + total + (static_cast<size_t>(count) * 4) + 4096 > kScratchSize)
+            {
+                copied = false;
+            }
+        }
+
         [pass setRenderPipelineState:pipeline];
         [pass setDepthStencilState:DepthState()];
         [pass setStencilReferenceValue:static_cast<uint32_t>(g_draw.stencilRef)];
@@ -1462,6 +1503,14 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                 continue;
             }
             int stream = g_draw.attribs[a.attributeIndex].stream;
+            if (copied)
+            {
+                size_t stride = static_cast<size_t>(g_draw.streams[stream].stride);
+                const uint8_t * first = reinterpret_cast<const uint8_t *>(g_draw.vertexBuffers[stream].address) + stride * baseVertex;
+                id<MTLBuffer> copy = Snapshot(first, stride * (static_cast<size_t>(maxIndex) + 1), &offset);
+                [pass setVertexBuffer:copy offset:offset atIndex:16 + stream];
+                continue;
+            }
             id<MTLBuffer> buffer = BufferAt(g_draw.vertexBuffers[stream].address, 1, &offset);
             if (!buffer)
             {
@@ -1534,15 +1583,51 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
             }
         }
 
+        if (copied)
+        {
+            size_t indexBytes = static_cast<size_t>(count) * (indexType == 1 ? 2 : 4);
+            id<MTLBuffer> copy = Snapshot(reinterpret_cast<const void *>(indices), indexBytes, &offset);
+            if (copy)
+            {
+                indexBuffer = copy;
+                indexOffset = offset;
+            }
+        }
         [pass drawIndexedPrimitives:type
                          indexCount:count
                           indexType:indexType == 1 ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32
                         indexBuffer:indexBuffer
                   indexBufferOffset:indexOffset
                       instanceCount:1
-                         baseVertex:baseVertex
+                         baseVertex:copied ? 0 : baseVertex
                        baseInstance:0];
         g_stats[kDrawn]++;
+    }
+}
+
+// ---- finishing early ----
+// The game asks the queue to finish when it is about to reuse memory that draws
+// already recorded still refer to (its vertex buffers for cloth and other per-frame
+// geometry are rewritten several times a frame). Nothing is copied here, so those
+// draws have to reach the GPU and complete before the game carries on.
+void QueueFinish(void * queue)
+{
+    (void)queue;
+    d3_nvn_called("nvnQueueFinish");
+    @autoreleasepool
+    {
+        TextureState * color = g_color;
+        TextureState * depth = g_depth;
+        FlushClears();
+        id<MTLCommandBuffer> done = g_commands;
+        g_commands = nil;
+        if (done)
+        {
+            [done commit];
+            [done waitUntilCompleted];
+        }
+        g_color = color;        // the next draw opens a new pass on the same targets
+        g_depth = depth;
     }
 }
 
@@ -1770,6 +1855,8 @@ extern "C" const d3_nvn_entry d3_nvn_metal_overrides[] = {
     {"nvnCommandBufferClearColor", (d3_nvn_function)ClearColor},
     {"nvnCommandBufferClearDepthStencil", (d3_nvn_function)ClearDepthStencil},
     {"nvnQueuePresentTexture", (d3_nvn_function)PresentTexture},
+    {"nvnQueueFinish", (d3_nvn_function)QueueFinish},
+    {"nvnQueueFlush", (d3_nvn_function)QueueFinish},
     {nullptr, nullptr},
 };
 
