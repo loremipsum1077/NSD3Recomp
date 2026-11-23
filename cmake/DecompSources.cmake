@@ -109,6 +109,19 @@ if(D3_MOD_RENDER_SIZE)
         --replace "GRAPHICS_PERSISTENT_MEMORY_SIZE = 0x17400000;" "GRAPHICS_PERSISTENT_MEMORY_SIZE = ${_budget};")
 endif()
 
+# D3_MOD_CAMERA_DISTANCE=1.5 pulls the in-game camera back to that multiple of its
+# normal distance from the hero, along the same line of sight. Only the view is
+# moved: the camera position the game keeps for its own follow logic is unchanged.
+set(D3_MOD_CAMERA_DISTANCE "" CACHE STRING "Mod: multiply the camera's distance from the hero by this number (empty: unchanged)")
+if(D3_MOD_CAMERA_DISTANCE)
+    message(STATUS "Mod: camera distance x${D3_MOD_CAMERA_DISTANCE}")
+    set(_k "${D3_MOD_CAMERA_DISTANCE}f")
+    # $<SEMICOLON> because a plain semicolon would split the text into separate arguments.
+    d3_patch_source("X/Client/Camera/ConsoleViewController.cpp"
+        --replace "csThis.transform.Set(csThis.wvLookFrom, csThis.wvLookAt, cgwvZAxis);"
+                  "Vector3D wvModFrom = csThis.wvLookFrom$<SEMICOLON> wvModFrom.x = csThis.wvLookAt.x + (csThis.wvLookFrom.x - csThis.wvLookAt.x) * ${_k}$<SEMICOLON> wvModFrom.y = csThis.wvLookAt.y + (csThis.wvLookFrom.y - csThis.wvLookAt.y) * ${_k}$<SEMICOLON> wvModFrom.z = csThis.wvLookAt.z + (csThis.wvLookFrom.z - csThis.wvLookAt.z) * ${_k}$<SEMICOLON> csThis.transform.Set(wvModFrom, csThis.wvLookAt, cgwvZAxis)$<SEMICOLON>")
+endif()
+
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
 get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
 foreach(_entry IN LISTS _patched_sources)
