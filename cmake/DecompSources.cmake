@@ -89,6 +89,12 @@ if(D3_MOD_RENDER_SIZE)
     d3_patch_source("X/Client/Gfx/NX64/NX64NVNCore.cpp"
         --replace "globals.dwDeviceWidth = 1600;" "globals.dwDeviceWidth = ${CMAKE_MATCH_1};"
         --replace "globals.dwDeviceHeight = 900;" "globals.dwDeviceHeight = ${CMAKE_MATCH_2};")
+    # Text is drawn from ready-made font sets, one per display height. The Switch's
+    # data holds the 900-line set (and a 720-line one) but none for 1080 or 2160
+    # lines, so above 1080 lines no text would appear: keep the 900-line set.
+    d3_patch_source("X/Client/Definitions/FontDefinition.cpp"
+        --replace "dwResolutionFlags = 1 << FCR_2160P_BIT;" "dwResolutionFlags = 1 << FCR_900P_BIT;"
+        --replace "dwResolutionFlags = 1 << FCR_1080P_BIT;" "dwResolutionFlags = 1 << FCR_900P_BIT;")
     # The game gives its screen-sized buffers a fixed budget, sized for 1600x900. It
     # is raised in proportion to the number of pixels (never lowered, and kept under
     # 2 GB, which is as far as the heap's 32-bit sizes are known to be safe).
