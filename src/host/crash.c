@@ -21,7 +21,7 @@ static void OnCrash(int sig, siginfo_t * info, void * context)
 
     snprintf(line, sizeof line, "\nCrash: %s at address %p\nCall stack:\n",
              sig == SIGSEGV ? "invalid memory access" : sig == SIGBUS ? "bus error" : sig == SIGILL ? "illegal instruction"
-                                                                                  : "arithmetic error",
+             : sig == SIGTRAP ? "trap (a failed check in the game)" : sig == SIGABRT ? "abort" : "arithmetic error",
              info->si_addr);
     write(STDERR_FILENO, line, strlen(line));
 #if defined(__APPLE__) && defined(__aarch64__)
