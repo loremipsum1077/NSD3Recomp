@@ -78,6 +78,31 @@ if(D3_MOD_RUN_SPEED)
         --replace "pHero->flAttributesSprintSpeed);" "pHero->flAttributesSprintSpeed * ${D3_MOD_RUN_SPEED}f);")
 endif()
 
+# D3_MOD_RENDER_SIZE=2560x1440 draws the game at that size instead of the Switch's
+# docked 1600x900. The window shows whatever size is drawn, scaled to fit.
+set(D3_MOD_RENDER_SIZE "" CACHE STRING "Mod: the size the game draws at, as WIDTHxHEIGHT (empty: 1600x900)")
+if(D3_MOD_RENDER_SIZE)
+    if(NOT D3_MOD_RENDER_SIZE MATCHES "^([0-9]+)x([0-9]+)$")
+        message(FATAL_ERROR "D3_MOD_RENDER_SIZE must look like 2560x1440")
+    endif()
+    message(STATUS "Mod: render size ${CMAKE_MATCH_1} by ${CMAKE_MATCH_2}")
+    d3_patch_source("X/Client/Gfx/NX64/NX64NVNCore.cpp"
+        --replace "globals.dwDeviceWidth = 1600;" "globals.dwDeviceWidth = ${CMAKE_MATCH_1};"
+        --replace "globals.dwDeviceHeight = 900;" "globals.dwDeviceHeight = ${CMAKE_MATCH_2};")
+    # The game gives its screen-sized buffers a fixed budget, sized for 1600x900. It
+    # is raised in proportion to the number of pixels (never lowered, and kept under
+    # 2 GB, which is as far as the heap's 32-bit sizes are known to be safe).
+    math(EXPR _budget "390070272 * ${CMAKE_MATCH_1} * ${CMAKE_MATCH_2} / 1440000")
+    if(_budget LESS 390070272)
+        set(_budget 390070272)
+    elseif(_budget GREATER 2013265920)
+        set(_budget 2013265920)
+    endif()
+    math(EXPR _budget "${_budget} / 1048576 * 1048576")
+    d3_patch_source("X/Sigma/Memory/SigmaMemory.cpp"
+        --replace "GRAPHICS_PERSISTENT_MEMORY_SIZE = 0x17400000;" "GRAPHICS_PERSISTENT_MEMORY_SIZE = ${_budget};")
+endif()
+
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
 get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
 foreach(_entry IN LISTS _patched_sources)

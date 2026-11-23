@@ -92,6 +92,14 @@ identical to the original. A mod is a build option that compiles a patched copy 
 one decomp source file in place of the original (`cmake/DecompSources.cmake`,
 `tools/patch_source.py`). All mods are off by default.
 
+The easy way to choose them: double-click `Mods.command` (or run
+`python3 tools/mods.py`). It opens a page in your browser, served from this computer
+only, with a checkbox for each mod, a Build button and a Start game button. The mods
+it offers are listed in `config/mods.json`.
+
+- `-DD3_MOD_RENDER_SIZE=2560x1440`: draw the game at that size instead of the
+  Switch's docked 1600x900. The game's memory budget for screen-sized buffers is
+  raised to match. Turn it off with `-DD3_MOD_RENDER_SIZE=`.
 - `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
 

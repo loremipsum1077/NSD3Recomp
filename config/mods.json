@@ -1,0 +1,19 @@
+[
+  {
+    "id": "D3_MOD_RENDER_SIZE",
+    "title": "Higher resolution",
+    "description": "Draw the game at a larger size than the Switch's docked 1600x900. Costs GPU time and memory.",
+    "type": "choice",
+    "choices": ["1920x1080", "2560x1440", "3840x2160"],
+    "default": "2560x1440",
+    "pattern": "^[0-9]{3,5}x[0-9]{3,5}$"
+  },
+  {
+    "id": "D3_MOD_RUN_SPEED",
+    "title": "Faster heroes",
+    "description": "Multiply how fast heroes walk, run and sprint. 1.0 is the game's own speed.",
+    "type": "number",
+    "default": "2.0",
+    "pattern": "^[0-9]{1,2}(\\.[0-9]{1,3})?$"
+  }
+]
