@@ -126,6 +126,8 @@ endif()
 # season's number and state arrive from the servers; here they start out as "season
 # <number>, active", the game is told the season data has arrived, and the check made
 # with the server when a seasonal hero is created answers yes.
+# Seasonal content repeats every 12 seasons in this version's data (the season cycle
+# length in the achievements file), so 1 to 12 cover everything.
 set(D3_MOD_SEASON "" CACHE STRING "Mod: make this season number active offline (empty: no season)")
 if(D3_MOD_SEASON)
     if(NOT D3_MOD_SEASON MATCHES "^[0-9]+$")

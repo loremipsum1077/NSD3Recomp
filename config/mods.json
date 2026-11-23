@@ -31,9 +31,23 @@
   {
     "id": "D3_MOD_SEASON",
     "title": "Seasons (offline)",
-    "description": "Make a season active without Blizzard's servers, so seasonal heroes can be created. The value is the season number. Leaderboards and other online parts of seasons stay unavailable.",
-    "type": "number",
+    "description": "Make a season active without Blizzard's servers, so the Season Journey and seasonal heroes are available. The game's data holds 12 sets of seasonal content that repeat (season 13 is the same as 1), so these are all the distinct choices. Leaderboards and other online parts of seasons stay unavailable.",
+    "type": "choice",
     "default": "1",
-    "pattern": "^[0-9]{1,3}$"
+    "pattern": "^[0-9]{1,3}$",
+    "choices": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ]
   }
 ]
