@@ -33,8 +33,8 @@ set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game" CACHE PATH "Folder holding the user
 
 # The platform layer: everything that replaces the Switch underneath the game.
 file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
-    src/nn/*.c src/nn/*.cpp src/gfx/*.c src/gfx/*.cpp src/audio/*.c src/audio/*.cpp
-    src/libc/*.c src/replace/*.c src/host/unimplemented.c src/host/crash.c src/host/window.cpp
+    src/nn/*.c src/nn/*.cpp src/gfx/*.c src/gfx/*.cpp
+    src/libc/*.c src/replace/*.c src/host/unimplemented.c src/host/crash.c src/host/window.cpp src/host/audio.cpp
     src/gfx/*.mm)
 # Default entry points of the do-nothing graphics driver, from the decomp's NVN header.
 set(D3_NVN_NULL "${CMAKE_BINARY_DIR}/generated/nvn_null_defaults.c")
@@ -73,7 +73,15 @@ if(EXISTS "${D3_GAME_DIR}/exefs/main" AND EXISTS "${D3_GAME_DIR}/romfs/DiabloIII
     # The objects of this build exactly: the object directory can also hold leftovers
     # from source files the decomp has since removed.
     file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/decomp_objects.txt" CONTENT "$<JOIN:$<TARGET_OBJECTS:d3_decomp>,\n>\n")
-    add_library(d3_extracted OBJECT "${D3_EXTRACTED}")
+    # The Vorbis setup packets FMOD keeps in the executable, which the game's sample
+    # banks need to be decoded (src/audio/fmod_host.cpp).
+    set(D3_VORBIS_SETUPS "${CMAKE_BINARY_DIR}/generated/vorbis_setups.c")
+    add_custom_command(OUTPUT "${D3_VORBIS_SETUPS}"
+        COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/tools/extract_vorbis_setups.py"
+                "${D3_GAME_DIR}/exefs/main" "${D3_VORBIS_SETUPS}"
+        DEPENDS tools/extract_vorbis_setups.py tools/extract_data.py "${D3_GAME_DIR}/exefs/main"
+        COMMENT "Extracting Vorbis setup packets from the game dump")
+    add_library(d3_extracted OBJECT "${D3_EXTRACTED}" "${D3_VORBIS_SETUPS}")
     target_compile_options(d3_extracted PRIVATE -w)
 else()
     message(STATUS "No game dump in ${D3_GAME_DIR}: extracted data definitions are not built")
@@ -81,9 +89,12 @@ endif()
 
 # Gap-fillers written against the decomp's own headers (src/replace/README.md).
 file(GLOB D3_REPLACE_SOURCES CONFIGURE_DEPENDS src/replace/*.cc src/replace/*.cpp)
+# The FMOD functions are written against the decomp's FMOD and Vorbis headers too.
+list(APPEND D3_REPLACE_SOURCES src/audio/fmod_host.cpp)
 add_library(d3_replace OBJECT ${D3_REPLACE_SOURCES})
 target_link_libraries(d3_replace PRIVATE d3_decomp_flags)
-target_compile_options(d3_replace PRIVATE -funsigned-char)   # protobuf's setting
+set_source_files_properties(src/replace/protobuf_field_skipper.cc PROPERTIES COMPILE_OPTIONS -funsigned-char)   # protobuf's setting
+target_include_directories(d3_replace PRIVATE "${D3_DECOMP_ROOT}/src/Contrib/Contrib/OggVorbis/libvorbis/include")
 
 # The program: host entry point + game + middleware + platform layer + gap-fillers
 # + data extracted from the dump. Without a dump it cannot link, so it is only

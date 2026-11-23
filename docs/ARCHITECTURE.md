@@ -42,7 +42,7 @@ anything, so only what exists is in the repository.
 | `src/nn/<area>/` | The SDK's system services implemented on the host, one directory per SDK area (`os`, `fs`, `hid`, `account`, `socket`, `oe`, `settings`, `time` ...). `unimplemented.c` in each lists what is still a stand-in | 2, 3 |
 | `src/libc/` | Pieces of the Switch's C library that the source depends on by layout or name | 2 |
 | `src/gfx/` | The renderer (see Graphics below) | 4 |
-| `src/audio/` | Audio: route to be decided (see FMOD below) | 6 |
+| `src/audio/` | Audio: the FMOD functions the game calls, on a software mixer | 6 |
 | `src/replace/` | Gap-fillers for things the decomp lacks; each goes away when the decomp has the real thing | 2 |
 | `config/` | Lists that drive the tools (names only, no content) | 2 |
 | `tools/` | Progress meters, game-data verification | all |
@@ -105,8 +105,17 @@ for online services.
 
 **FMOD (audio) is the exception.** The decomp has its headers only; the library
 itself is part of the 2,191 functions without source. The game calls 74 FMOD
-functions. They must come from FMOD's own macOS library, which each person would
-download themselves, or from a replacement written here.
+functions. They are written here (`src/audio/fmod_host.cpp`): sounds are decoded
+to 16-bit samples when created and mixed in software into the host's audio device
+(`src/host/audio.cpp`, SDL). Ogg Vorbis is decoded with the decomp's own libvorbis.
+The game's sample banks (FSB5) hold either FMOD's ADPCM or Vorbis without its
+setup packet; FMOD keeps those packets in the game's executable, and
+`tools/extract_vorbis_setups.py` writes them into the build directory.
+
+Two rules the sound code follows. Its memory comes from the host, not `malloc`:
+the game's heaps are a fixed size and were never meant to hold decoded sound.
+And sounds opened "non-blocking" load on one thread, one at a time, because
+libvorbis's working memory does come from the game's heap.
 
 ## Data the decomp does not define
 

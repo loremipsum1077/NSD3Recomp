@@ -6,9 +6,9 @@ for desktop platforms. macOS on Apple silicon is the first target.
 
 **Status: the game does not run yet.** The decomp compiles and links into one
 macOS executable. It starts, loads its data, and draws the game's Hero Creation
-menu in a window through Metal, with keyboard and controller input. There is no
-sound, parts of the picture are still missing, and nothing beyond that menu has
-been tried. See the [roadmap](docs/ROADMAP.md).
+menu and the game world in a window through Metal, with keyboard and controller
+input and with sound. Parts of the picture are still missing and play beyond
+walking and attacking in the first area has not been tried. See the [roadmap](docs/ROADMAP.md).
 
 ## What is and is not in this repository
 
@@ -78,7 +78,10 @@ A game controller maps by position: the right-hand face button is the Switch's A
 
 Environment variables: `D3_HEADLESS=1` (no window), `D3_LANGUAGE=fr` (a Switch
 language code), `D3_PLAYER_NAME=...`, `D3_NVN_TRACE=frames` or `all`,
-`D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds).
+`D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds),
+`D3_SCREENSHOT=file.png` with `D3_SCREENSHOT_FRAME=2500`, `D3_METAL_STATS=1`,
+`D3_FS_TRACE=1`, `D3_SOUND_STATS=1` (what was decoded and how loud the output is),
+`D3_SOUND_DUMP=<directory>` (first decoded samples as WAV), `D3_NO_SOUND=1`.
 
 ## Measuring progress
 

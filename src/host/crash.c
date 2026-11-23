@@ -68,4 +68,6 @@ __attribute__((constructor(101))) static void InstallCrashHandler(void)
     sigaction(SIGBUS, &action, NULL);
     sigaction(SIGILL, &action, NULL);
     sigaction(SIGFPE, &action, NULL);
+    sigaction(SIGTRAP, &action, NULL);
+    sigaction(SIGABRT, &action, NULL);
 }

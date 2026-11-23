@@ -14,7 +14,7 @@ passes on a clean checkout, not before.
 | 3 | Boots without a window | Startup runs to the main menu state with data loaded | Exit test passes: reaches Hero Creation (seen in milestone 4's screenshots) |
 | 4 | First frame | Main menu drawn in a window | Exit test passes: Hero Creation and its welcome dialog are drawn, with defects listed below |
 | 5 | In game | Create a hero, enter the first area, move and fight | Hero created, first area entered, hero moves; fighting not tried |
-| 6 | Sound | Music, effects and voice play | Not started |
+| 6 | Sound | Music, effects and voice play | In progress: sound plays; not yet listened to and checked |
 | 7 | Keeps progress | Saves and settings survive a restart | Not started |
 | 8 | Release quality | A full act played without a crash; packaged as an app | Not started |
 | 9 | More platforms | Linux, then Windows | Not started |
@@ -85,7 +85,7 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] The Switch libc's 32-byte mutex, for the three libraries that embed one (`src/libc/nnmusl_mutex.c`)
 - [x] Crash reporter: what happened, registers and call stack (`src/host/crash.c`)
 - [x] A graphics driver that draws nothing (`src/gfx/null/`): 498 entry points generated from the decomp's header, with real behaviour only where the game depends on an answer (memory pools, buffers, counters, events, frame acquisition)
-- [x] Audio: every FMOD function reports "no sound device", which the game accepts (`src/audio/fmod_off.c`)
+- [x] Audio: every FMOD function reports "no sound device", which the game accepts (since replaced, see milestone 6)
 - [x] `nn::account`: one fixed local user with no network account
 - [x] `nn::hid`: no controller connected
 - [x] Network interface, wireless, amiibo, friends, add-on content, parental controls: report unavailable or empty
@@ -152,8 +152,13 @@ Still to do from the original list:
 
 ## 6. Sound
 
-- [ ] Choose the audio route (see open decisions)
-- [ ] Sound banks load from the dump; streamed music and voice
+- [x] Audio route: the 74 FMOD functions are written here on a software mixer (`src/audio/fmod_host.cpp`, output through SDL)
+- [x] Ogg Vorbis files and sample banks (Vorbis and FMOD ADPCM) decode; in a 70 second run into the game, 1,242 sounds, none failed
+- [x] Playing, pausing, looping, volume, pitch, groups, distance attenuation and left/right placement
+- [ ] Listen to it: nobody has yet. Measured only: real signal reaches the device, up to 14 sounds at once, no clipping
+- [ ] Decode streams as they play. Everything is decoded in full when created, which costs memory (music most of all)
+- [ ] Effects: reverb, the game's DSP units, occlusion, doppler, priorities when voices run out
+- [ ] Video soundtracks (the game-filled stream) checked against a playing video
 
 ## 7. Keeps progress
 
@@ -188,7 +193,7 @@ Still to do from the original list:
 |---|---|---|
 | How the decomp is pinned | Milestone 0 | Submodule at a fixed commit |
 | Where the 238 missing data definitions come from | Milestone 2 | Write them in the decomp where the debug info gives their type; extract the rest from the player's copy |
-| Audio: FMOD's own macOS library (the player downloads it) or a replacement for the 74 functions used | Milestone 6 | Undecided |
+| Audio: FMOD's own macOS library (the player downloads it) or a replacement for the 74 functions used | Milestone 6 | Replacement written here |
 | Graphics backend approach | Milestone 4 | Decided: implement the driver interface on Metal (B) |
 | Graphics API on macOS | Milestone 4 | Decided: Metal directly. Other platforms will need their own driver file |
 | Shaders: translate or rewrite | Milestone 4 | Decided: translate ([findings](SHADERS.md)) |
