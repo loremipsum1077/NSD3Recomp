@@ -74,6 +74,8 @@ A game controller maps by position: the right-hand face button is the Switch's A
 | 1 / 2 / 3 / 4 | L / R / ZL / ZR |
 | Tab / Backspace | Plus / Minus |
 
+The same table is on the Mods page (`Mods.command`).
+
 ## Useful switches
 
 Environment variables: `D3_HEADLESS=1` (no window), `D3_LANGUAGE=fr` (a Switch

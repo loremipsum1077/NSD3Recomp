@@ -107,6 +107,12 @@ PAGE = r"""<!doctype html>
   #status.ok { color:var(--ok); } #status.bad { color:var(--bad); }
   pre { background:var(--log); color:var(--logink); border-radius:10px; padding:14px; height:300px; overflow:auto; font:12px/1.45 ui-monospace, Menlo, monospace; white-space:pre-wrap; word-break:break-word; margin:0; }
   .note { color:var(--dim); font-size:13px; margin-top:14px; }
+  h2 { font:600 20px/1.2 Georgia, serif; margin:36px 0 6px; }
+  table { border-collapse:collapse; width:100%; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:8px 14px; border-bottom:1px solid var(--line); font-size:15px; }
+  th { color:var(--dim); font-weight:600; font-size:13px; }
+  tr:last-child td { border-bottom:0; }
+  kbd { font:13px ui-monospace, Menlo, monospace; background:var(--bg); border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:1px 6px; }
 </style></head><body><main>
 <h1>Mods</h1>
 <p class="sub">Tick what you want, then build. Nothing ticked builds the game exactly as it shipped.</p>
@@ -117,6 +123,24 @@ PAGE = r"""<!doctype html>
   <span id="status"></span>
 </div>
 <pre id="log" aria-label="Build output"></pre>
+<h2>Controls</h2>
+<p class="sub" style="margin-bottom:12px">The game shows Switch button names on screen. On the keyboard they are these keys; a connected controller also works.</p>
+<table>
+  <tr><th>Switch</th><th>Keyboard</th></tr>
+  <tr><td>Left stick (move)</td><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></td></tr>
+  <tr><td>Right stick</td><td><kbd>I</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd></td></tr>
+  <tr><td>Directional buttons</td><td>Arrow keys</td></tr>
+  <tr><td>A (accept)</td><td><kbd>Space</kbd> or <kbd>Return</kbd></td></tr>
+  <tr><td>B (back)</td><td><kbd>Esc</kbd></td></tr>
+  <tr><td>X</td><td><kbd>E</kbd></td></tr>
+  <tr><td>Y</td><td><kbd>Q</kbd></td></tr>
+  <tr><td>L</td><td><kbd>1</kbd></td></tr>
+  <tr><td>R</td><td><kbd>2</kbd></td></tr>
+  <tr><td>ZL</td><td><kbd>3</kbd></td></tr>
+  <tr><td>ZR</td><td><kbd>4</kbd></td></tr>
+  <tr><td>+ (plus)</td><td><kbd>Tab</kbd></td></tr>
+  <tr><td>&minus; (minus)</td><td><kbd>Backspace</kbd></td></tr>
+</table>
 <p class="note">This page runs on your computer only. Closing it stops the helper program; a game you started keeps running.</p>
 </main><script>
 const T = new URLSearchParams(location.search).get("t");

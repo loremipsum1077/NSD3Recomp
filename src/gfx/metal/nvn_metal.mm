@@ -356,28 +356,41 @@ id<MTLBuffer> BufferAt(uint64_t address, size_t size, NSUInteger * offset)
 
 // Constant blocks change between draws within a frame, and the GPU reads them only
 // after the frame is submitted, so each draw gets its own copy. The copies live in
-// large buffers that are reused a few frames later.
-const int kScratchBuffers = 4;
-const NSUInteger kScratchSize = 96 << 20;
-id<MTLBuffer> g_scratch[kScratchBuffers];
+// large buffers that are reused a few frames later. A frame that needs more than one
+// buffer gets another: a draw whose copy did not fit used to go without its constants,
+// which turned whole screens a single colour.
+const int kScratchFrames = 4;
+const int kScratchChunks = 32;
+const NSUInteger kScratchSize = 32 << 20;
+id<MTLBuffer> g_scratch[kScratchFrames][kScratchChunks];
+int g_scratchChunk;
 NSUInteger g_scratchUsed;
 
 id<MTLBuffer> Snapshot(const void * data, size_t size, NSUInteger * offset)
 {
-    int slot = g_frame % kScratchBuffers;
-    if (!g_scratch[slot])
-    {
-        g_scratch[slot] = [g_device newBufferWithLength:kScratchSize options:MTLResourceStorageModeShared];
-    }
+    int slot = g_frame % kScratchFrames;
     NSUInteger at = (g_scratchUsed + 255) & ~static_cast<NSUInteger>(255);
-    if (at + size > kScratchSize)
+    if (size > kScratchSize)
     {
         return nil;
     }
-    memcpy(static_cast<char *>(g_scratch[slot].contents) + at, data, size);
+    if (at + size > kScratchSize)
+    {
+        if (g_scratchChunk + 1 >= kScratchChunks)
+        {
+            return nil;
+        }
+        g_scratchChunk++;
+        at = 0;
+    }
+    if (!g_scratch[slot][g_scratchChunk])
+    {
+        g_scratch[slot][g_scratchChunk] = [g_device newBufferWithLength:kScratchSize options:MTLResourceStorageModeShared];
+    }
+    memcpy(static_cast<char *>(g_scratch[slot][g_scratchChunk].contents) + at, data, size);
     g_scratchUsed = at + size;
     *offset = at;
-    return g_scratch[slot];
+    return g_scratch[slot][g_scratchChunk];
 }
 
 // ---- device ----
@@ -583,6 +596,11 @@ void SetRenderTargets(void * cb, int numColors, TextureState * const * colors, c
         FlushClears();
         g_color = color;
         g_depth = depth;
+        if (getenv("D3_DRAW_LOG") && g_frame == static_cast<unsigned>(atoi(getenv("D3_DRAW_LOG"))))
+        {
+            fprintf(stderr, "targets: colour %p (%dx%d format %d) depth %p, after draw %u\n", static_cast<void *>(color), color ? color->desc.width : 0,
+                    color ? color->desc.height : 0, color ? color->desc.format : 0, static_cast<void *>(depth), g_drawIndex);
+        }
     }
 }
 
@@ -598,6 +616,11 @@ void ClearColor(void * cb, int index, const float * color, int mask)
     @autoreleasepool
     {
         EndPass();
+        if (getenv("D3_DRAW_LOG") && g_frame == static_cast<unsigned>(atoi(getenv("D3_DRAW_LOG"))))
+        {
+            fprintf(stderr, "clear: colour %p to %.2f %.2f %.2f %.2f mask %d, after draw %u\n", static_cast<void *>(g_color), color[0], color[1], color[2],
+                    color[3], mask, g_drawIndex);
+        }
         memcpy(g_color->clearColor, color, sizeof(g_color->clearColor));
         g_color->cleared = true;
     }
@@ -1431,17 +1454,18 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
         // For finding the draw that puts something wrong on screen.
         // D3_DRAW_LOG=<frame> lists every draw of that frame. D3_DRAW_SWEEP=<frame>,<n>
         // leaves out a different n-th of the draws in each of the n frames from <frame>
-        // (or, with a third number, starts at that draw and leaves out one draw a frame).
+        // (or, with a third number, starts at that draw and leaves out one draw a frame;
+        // or, with a fourth, stops drawing at that draw, that many draws later each frame).
         // With screenshots of those frames, the one without the fault names the draws.
         unsigned drawIndex = g_drawIndex++;
         static const char * drawLog = getenv("D3_DRAW_LOG");
         static const char * drawSweep = getenv("D3_DRAW_SWEEP");
         if (drawSweep)
         {
-            static unsigned first, steps, total, from = ~0u;
+            static unsigned first, steps, total, from = ~0u, stride;
             if (!steps)
             {
-                sscanf(drawSweep, "%u,%u,%u", &first, &steps, &from);
+                sscanf(drawSweep, "%u,%u,%u,%u", &first, &steps, &from, &stride);
                 steps = steps ? steps : 1;
             }
             if (g_frame + 1 == first)
@@ -1453,6 +1477,11 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                 unsigned step = g_frame - first;
                 unsigned low = from != ~0u ? from + step : total * step / steps;
                 unsigned high = from != ~0u ? low + 1 : total * (step + 1) / steps;
+                if (stride)
+                {
+                    low = from + step * stride;     // a fourth number: stop each frame that many draws later
+                    high = ~0u;
+                }
                 if (drawIndex == 0)
                 {
                     fprintf(stderr, "metal: frame %u leaves out draws %u to %u of %u\n", g_frame, low, high - 1, total);
@@ -1465,7 +1494,9 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
         }
         if (drawLog && g_frame == static_cast<unsigned>(atoi(drawLog)))
         {
-            fprintf(stderr, "draw %u: vs %016llx fs %016llx count %d target %lux%lu blend %u (%d %d / %d %d) textures", drawIndex,
+            fprintf(stderr, "draw %u: view %d,%d %dx%d depth %d%d ", drawIndex, g_draw.viewport[0], g_draw.viewport[1], g_draw.viewport[2],
+                    g_draw.viewport[3], static_cast<int>(g_draw.depth.depthTest), static_cast<int>(g_draw.depth.depthWrite));
+            fprintf(stderr, "vs %016llx fs %016llx count %d target %lux%lu blend %u (%d %d / %d %d) textures",
                     g_draw.program[0]->hash, g_draw.program[1]->hash, count, static_cast<unsigned long>(Metal(g_color).width),
                     static_cast<unsigned long>(Metal(g_color).height), g_draw.color.blendEnable & 1, g_draw.blend.srcColor, g_draw.blend.dstColor,
                     g_draw.blend.srcAlpha, g_draw.blend.dstAlpha);
@@ -1476,6 +1507,10 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                 {
                     fprintf(stderr, " %d:f%d,%dx%d,l%d%s", i, bound->desc.format, bound->desc.width, bound->desc.height, bound->desc.levels,
                             bound == g_color ? "(target)" : "");
+                    if (bound->desc.width >= 1024 && !Format(bound->desc.format).block)
+                    {
+                        fprintf(stderr, "@%p", static_cast<const void *>(bound));     // which screen-sized buffer
+                    }
                 }
             }
             fprintf(stderr, "\n");
@@ -1552,13 +1587,14 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
         const int kCopyIndexLimit = 6000;
         const size_t kCopyByteLimit = 256 << 10;
         bool copied = false;
-        uint32_t maxIndex = 0;
+        uint32_t maxIndex = 0, minIndex = ~0u;
         if (count <= kCopyIndexLimit)
         {
             for (int k = 0; k < count; k++)
             {
                 uint32_t idx = indexType == 1 ? reinterpret_cast<const uint16_t *>(indices)[k] : reinterpret_cast<const uint32_t *>(indices)[k];
                 maxIndex = idx > maxIndex ? idx : maxIndex;
+                minIndex = idx < minIndex ? idx : minIndex;
             }
             copied = baseVertex >= 0;
             // Every stream the shader reads must be small enough, or none is copied:
@@ -1572,14 +1608,14 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                     continue;
                 }
                 int stream = g_draw.attribs[a.attributeIndex].stream;
-                size_t bytes = static_cast<size_t>(g_draw.streams[stream].stride) * (static_cast<size_t>(maxIndex) + 1);
+                size_t bytes = static_cast<size_t>(g_draw.streams[stream].stride) * (static_cast<size_t>(maxIndex - minIndex) + 1);
                 total += bytes;
                 if (!g_draw.streams[stream].stride || bytes > kCopyByteLimit || !g_draw.vertexBuffers[stream].address)
                 {
                     copied = false;
                 }
             }
-            if (g_scratchUsed + total + (static_cast<size_t>(count) * 4) + 4096 > kScratchSize)
+            if (count <= 0)
             {
                 copied = false;
             }
@@ -1612,10 +1648,17 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
             if (copied)
             {
                 size_t stride = static_cast<size_t>(g_draw.streams[stream].stride);
-                const uint8_t * first = reinterpret_cast<const uint8_t *>(g_draw.vertexBuffers[stream].address) + stride * baseVertex;
-                id<MTLBuffer> copy = Snapshot(first, stride * (static_cast<size_t>(maxIndex) + 1), &offset);
-                [pass setVertexBuffer:copy offset:offset atIndex:16 + stream];
-                continue;
+                // Only the vertices this draw uses, from its lowest index to its highest.
+                const uint8_t * first = reinterpret_cast<const uint8_t *>(g_draw.vertexBuffers[stream].address) +
+                                        stride * (static_cast<size_t>(baseVertex) + minIndex);
+                id<MTLBuffer> copy = Snapshot(first, stride * (static_cast<size_t>(maxIndex - minIndex) + 1), &offset);
+                if (copy)
+                {
+                    [pass setVertexBuffer:copy offset:offset atIndex:16 + stream];
+                    continue;
+                }
+                g_stats[kNoBuffer]++;
+                return;
             }
             id<MTLBuffer> buffer = BufferAt(g_draw.vertexBuffers[stream].address, 1, &offset);
             if (!buffer)
@@ -1709,7 +1752,7 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                         indexBuffer:indexBuffer
                   indexBufferOffset:indexOffset
                       instanceCount:1
-                         baseVertex:copied ? 0 : baseVertex
+                         baseVertex:copied ? -static_cast<NSInteger>(minIndex) : baseVertex
                        baseInstance:0];
         g_stats[kDrawn]++;
     }
@@ -1839,7 +1882,13 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
         g_frame++;
         g_drawsLastFrame = g_drawIndex;
         g_drawIndex = 0;
+        if (getenv("D3_DRAW_LOG") && g_frame == static_cast<unsigned>(atoi(getenv("D3_DRAW_LOG"))) + 1)
+        {
+            fprintf(stderr, "scratch: %lu bytes used by that frame\n",
+                    static_cast<unsigned long>(g_scratchUsed + static_cast<NSUInteger>(g_scratchChunk) * kScratchSize));
+        }
         g_scratchUsed = 0;
+        g_scratchChunk = 0;
         if (g_frame % 300 == 0 && getenv("D3_METAL_STATS"))
         {
             fprintf(stderr, "metal: frame %u, %u shaders without a translation; last 300 frames:", g_frame, g_missingShaders);

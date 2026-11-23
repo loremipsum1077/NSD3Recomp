@@ -121,6 +121,7 @@ has not been observed: with no controller there is no way to skip them yet.
 - [x] Plain-row ("linear") textures: row size reported to the game and contents uploaded as rows
 - [x] Soft particles (glows, fog, fire) read a copy of the depth buffer; reading the attached one showed as random dark squares
 - [x] Closing the window ends the game: it is asked to exit, and the process ends 3 seconds later (the game's own shutdown does not finish yet)
+- [x] Per-frame scratch memory grows on demand, and small draws copy only the vertices they use; running out left later draws without constants (whole screens one colour)
 - [ ] Not implemented in the driver: scissor, stencil-cull criteria, array textures, mip levels of 3D textures, texture views, non-indexed draws
 - [ ] Each frame waits for the GPU to finish before the game continues, and small draws copy their data. Both are simple and safe and both cost time; neither has been measured on a heavy scene
 - [x] The queue's finish request is honoured (recorded draws are completed before the game continues)
