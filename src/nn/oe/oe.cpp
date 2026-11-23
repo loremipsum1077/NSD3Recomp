@@ -1,5 +1,6 @@
 // nn::oe: how the console is being used (docked or handheld, focus, exit requests).
 // The port presents itself as a docked console that always has focus.
+#include <unistd.h>
 #include "host/window.h"
 #include "nn/hid/hid_host.h"
 #include "nn/nn_types.h"
@@ -103,6 +104,14 @@ bool TryPopNotificationMessage(unsigned int * message)
     if (quit && !exitSent)
     {
         exitSent = true;
+        // The game is told, and given a few seconds to save and leave by itself.
+        // Its own shutdown does not yet finish here, so after that the process ends.
+        pthread_t watchdog;
+        pthread_create(&watchdog, nullptr, [](void *) -> void * {
+            sleep(3);
+            _exit(0);
+        }, nullptr);
+        pthread_detach(watchdog);
         *message = 4;       // MessageExitRequest
         return true;
     }

@@ -202,6 +202,8 @@ id<MTLRenderCommandEncoder> g_pass;
 TextureState * g_color;
 TextureState * g_depth;
 unsigned g_frame;
+id<MTLTexture> g_depthCopy, g_depthCopyOf;      // see CopyOfDepth
+unsigned g_drawIndex, g_drawsLastFrame;      // draws so far this frame, for D3_DRAW_SWEEP and D3_DRAW_LOG
 
 id<MTLTexture> Metal(const TextureState * t)
 {
@@ -603,6 +605,7 @@ void ClearColor(void * cb, int index, const float * color, int mask)
 
 void ClearDepthStencil(void * cb, float depth, int depthMask, int stencil, int stencilMask)
 {
+    g_depthCopyOf = nil;        // see CopyOfDepth
     (void)cb;
     d3_nvn_called("nvnCommandBufferClearDepthStencil");
     if (!g_depth)
@@ -738,6 +741,11 @@ void TextureFlushTexels(TextureState * t, const void * view, const void * region
     {
         FormatInfo f = Format(t->desc.format);
         const uint8_t * src = static_cast<const uint8_t *>(t->desc.pool->memory) + t->desc.offset;
+        if (getenv("D3_TEXTURE_LIST"))
+        {
+            fprintf(stderr, "texture: format %d %dx%d levels %d target %d flags %x\n", t->desc.format, t->desc.width, t->desc.height,
+                    t->desc.levels, t->desc.target, t->desc.flags);
+        }
         int faces = t->desc.target == 8 ? 6 : 1;
         NSMutableData * plain = [NSMutableData data];
         for (int face = 0; face < faces; face++)
@@ -1379,6 +1387,35 @@ id<MTLTexture> CopyOfTarget(id<MTLTexture> target)
     return g_feedbackCopy;
 }
 
+// The same for depth. Soft particles (glows, fog, fire) fade out where they meet
+// solid things by sampling the depth buffer they are being tested against. On Apple
+// GPUs that reads tiles of stale memory, which shows as random dark squares. The
+// copy is kept until something writes depth again, so a run of such draws shares one.
+
+id<MTLTexture> CopyOfDepth(id<MTLTexture> depth)
+{
+    if (g_depthCopyOf == depth && g_depthCopy)
+    {
+        return g_depthCopy;
+    }
+    if (!g_depthCopy || g_depthCopy.width != depth.width || g_depthCopy.height != depth.height || g_depthCopy.pixelFormat != depth.pixelFormat)
+    {
+        MTLTextureDescriptor * d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:depth.pixelFormat
+                                                                                      width:depth.width
+                                                                                     height:depth.height
+                                                                                  mipmapped:NO];
+        d.usage = MTLTextureUsageShaderRead;
+        d.storageMode = MTLStorageModePrivate;
+        g_depthCopy = [g_device newTextureWithDescriptor:d];
+    }
+    FlushClears();
+    id<MTLBlitCommandEncoder> blit = [Commands() blitCommandEncoder];
+    [blit copyFromTexture:depth toTexture:g_depthCopy];
+    [blit endEncoding];
+    g_depthCopyOf = depth;
+    return g_depthCopy;
+}
+
 void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, uint64_t indices, int baseVertex)
 {
     (void)cb;
@@ -1389,6 +1426,58 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
         {
             g_stats[kNoShader]++;
             return;
+        }
+        // For finding the draw that puts something wrong on screen.
+        // D3_DRAW_LOG=<frame> lists every draw of that frame. D3_DRAW_SWEEP=<frame>,<n>
+        // leaves out a different n-th of the draws in each of the n frames from <frame>
+        // (or, with a third number, starts at that draw and leaves out one draw a frame).
+        // With screenshots of those frames, the one without the fault names the draws.
+        unsigned drawIndex = g_drawIndex++;
+        static const char * drawLog = getenv("D3_DRAW_LOG");
+        static const char * drawSweep = getenv("D3_DRAW_SWEEP");
+        if (drawSweep)
+        {
+            static unsigned first, steps, total, from = ~0u;
+            if (!steps)
+            {
+                sscanf(drawSweep, "%u,%u,%u", &first, &steps, &from);
+                steps = steps ? steps : 1;
+            }
+            if (g_frame + 1 == first)
+            {
+                total = g_drawsLastFrame;
+            }
+            if (g_frame >= first && g_frame < first + steps)
+            {
+                unsigned step = g_frame - first;
+                unsigned low = from != ~0u ? from + step : total * step / steps;
+                unsigned high = from != ~0u ? low + 1 : total * (step + 1) / steps;
+                if (drawIndex == 0)
+                {
+                    fprintf(stderr, "metal: frame %u leaves out draws %u to %u of %u\n", g_frame, low, high - 1, total);
+                }
+                if (drawIndex >= low && drawIndex < high)
+                {
+                    return;
+                }
+            }
+        }
+        if (drawLog && g_frame == static_cast<unsigned>(atoi(drawLog)))
+        {
+            fprintf(stderr, "draw %u: vs %016llx fs %016llx count %d target %lux%lu blend %u (%d %d / %d %d) textures", drawIndex,
+                    g_draw.program[0]->hash, g_draw.program[1]->hash, count, static_cast<unsigned long>(Metal(g_color).width),
+                    static_cast<unsigned long>(Metal(g_color).height), g_draw.color.blendEnable & 1, g_draw.blend.srcColor, g_draw.blend.dstColor,
+                    g_draw.blend.srcAlpha, g_draw.blend.dstAlpha);
+            for (int i = 0; i < 16; i++)
+            {
+                const TextureState * bound = g_draw.textures[1][i].texture;
+                if (bound)
+                {
+                    fprintf(stderr, " %d:f%d,%dx%d,l%d%s", i, bound->desc.format, bound->desc.width, bound->desc.height, bound->desc.levels,
+                            bound == g_color ? "(target)" : "");
+                }
+            }
+            fprintf(stderr, "\n");
         }
         MTLPrimitiveType type;
         switch (primitive)
@@ -1427,6 +1516,22 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                     break;
                 }
             }
+        }
+        id<MTLTexture> depthCopy = nil;
+        for (int stage = 0; stage < 2 && !depthCopy; stage++)
+        {
+            for (int i = 0; i < 16; i++)
+            {
+                if (Metal(g_depth) && Metal(g_draw.textures[stage][i].texture) == Metal(g_depth))
+                {
+                    depthCopy = CopyOfDepth(Metal(g_depth));
+                    break;
+                }
+            }
+        }
+        if (Metal(g_depth) == g_depthCopyOf && g_draw.depth.depthTest && g_draw.depth.depthWrite)
+        {
+            g_depthCopyOf = nil;        // this draw changes the depth buffer
         }
         id<MTLRenderCommandEncoder> pass = Pass();
         NSUInteger offset = 0;
@@ -1569,6 +1674,10 @@ void DrawElementsBaseVertex(void * cb, int primitive, int indexType, int count, 
                 if (texture == Metal(g_color))
                 {
                     texture = selfCopy;     // see CopyOfTarget
+                }
+                else if (depthCopy && texture == Metal(g_depth))
+                {
+                    texture = depthCopy;    // see CopyOfDepth
                 }
                 if (stage == 0)
                 {
@@ -1727,6 +1836,8 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
         FlushClears();
         g_color = g_depth = nullptr;
         g_frame++;
+        g_drawsLastFrame = g_drawIndex;
+        g_drawIndex = 0;
         g_scratchUsed = 0;
         if (g_frame % 300 == 0 && getenv("D3_METAL_STATS"))
         {

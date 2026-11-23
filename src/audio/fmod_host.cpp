@@ -799,8 +799,7 @@ void * Load(void * p)
     return nullptr;
 }
 
-// Sounds opened "non-blocking" are loaded one at a time on one thread, as FMOD does:
-// the decoder's working memory comes from the game's heap, which has room for one.
+// Sounds opened "non-blocking" are loaded one at a time on one thread, as FMOD does.
 pthread_mutex_t g_queueLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t g_queueWake = PTHREAD_COND_INITIALIZER;
 LoadJob * g_queueFirst, * g_queueLast;
@@ -1070,6 +1069,9 @@ void PrintStats()
 
 }  // namespace
 
+// This file is built with everything hidden (see CMakeLists.txt, d3_sound); the FMOD
+// functions are what the game links against.
+#pragma GCC visibility push(default)
 extern "C" {
 
 // ---- memory and the system object ----
@@ -1682,3 +1684,4 @@ FMOD_RESULT FMOD_DSP_GetSystemObject(FMOD_DSP *, FMOD_SYSTEM ** system)
 }
 
 }  // extern "C"
+#pragma GCC visibility pop

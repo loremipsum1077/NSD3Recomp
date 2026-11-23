@@ -89,12 +89,29 @@ endif()
 
 # Gap-fillers written against the decomp's own headers (src/replace/README.md).
 file(GLOB D3_REPLACE_SOURCES CONFIGURE_DEPENDS src/replace/*.cc src/replace/*.cpp)
-# The FMOD functions are written against the decomp's FMOD and Vorbis headers too.
-list(APPEND D3_REPLACE_SOURCES src/audio/fmod_host.cpp)
 add_library(d3_replace OBJECT ${D3_REPLACE_SOURCES})
 target_link_libraries(d3_replace PRIVATE d3_decomp_flags)
 set_source_files_properties(src/replace/protobuf_field_skipper.cc PROPERTIES COMPILE_OPTIONS -funsigned-char)   # protobuf's setting
-target_include_directories(d3_replace PRIVATE "${D3_DECOMP_ROOT}/src/Contrib/Contrib/OggVorbis/libvorbis/include")
+
+# Sound: the FMOD functions (src/audio/fmod_host.cpp) with a private copy of the
+# decomp's Ogg Vorbis decoder, whose memory comes from the host and not from the
+# game's heap (src/audio/ogg_alloc.c). The pieces are joined into one object in
+# which everything but the FMOD functions is local, so the copy does not collide
+# with the one the game itself links for its videos.
+set(_d3_ogg "${D3_DECOMP_ROOT}/src/Contrib/Contrib/OggVorbis")
+file(GLOB D3_SOUND_VORBIS CONFIGURE_DEPENDS "${_d3_ogg}/libogg/src/*.c" "${_d3_ogg}/libvorbis/lib/*.c")
+add_library(d3_sound OBJECT src/audio/fmod_host.cpp src/audio/ogg_alloc.c ${D3_SOUND_VORBIS})
+target_link_libraries(d3_sound PRIVATE d3_decomp_flags)
+target_compile_options(d3_sound PRIVATE -fvisibility=hidden -w)
+set_source_files_properties(${D3_SOUND_VORBIS} PROPERTIES COMPILE_OPTIONS "-std=gnu89;-funsigned-char;-ffast-math")   # as in cmake/DecompSources.cmake
+target_include_directories(d3_sound PRIVATE "${_d3_ogg}/libogg/include" "${_d3_ogg}/libvorbis/include" "${_d3_ogg}/libvorbis/lib")
+set(D3_SOUND_OBJECT "${CMAKE_BINARY_DIR}/generated/sound.o")
+add_custom_command(OUTPUT "${D3_SOUND_OBJECT}"
+    COMMAND "${CMAKE_C_COMPILER}" -r -nostdlib -o "${D3_SOUND_OBJECT}" $<TARGET_OBJECTS:d3_sound>
+    DEPENDS d3_sound $<TARGET_OBJECTS:d3_sound>
+    COMMAND_EXPAND_LISTS
+    COMMENT "Joining the sound code and its Vorbis decoder")
+set_source_files_properties("${D3_SOUND_OBJECT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
 
 # The program: host entry point + game + middleware + platform layer + gap-fillers
 # + data extracted from the dump. Without a dump it cannot link, so it is only
@@ -106,7 +123,7 @@ if(TARGET d3_extracted)
     # reporter) runs before the game's static initialisers.
     add_executable(d3 $<TARGET_OBJECTS:d3_platform> src/host/main.cpp
         $<TARGET_OBJECTS:d3_decomp>
-        $<TARGET_OBJECTS:d3_replace> $<TARGET_OBJECTS:d3_extracted>)
+        $<TARGET_OBJECTS:d3_replace> $<TARGET_OBJECTS:d3_extracted> "${D3_SOUND_OBJECT}")
     target_compile_definitions(d3 PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_WITH_GAME)
     # Link the private C++ library and export nothing but main, so that no C++ symbol
     # of this program is shared with the system's libraries (see D3_LIBCXX_ROOT above).

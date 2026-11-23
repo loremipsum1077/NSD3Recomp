@@ -80,7 +80,9 @@ Environment variables: `D3_HEADLESS=1` (no window), `D3_LANGUAGE=fr` (a Switch
 language code), `D3_PLAYER_NAME=...`, `D3_NVN_TRACE=frames` or `all`,
 `D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds),
 `D3_SCREENSHOT=file.png` with `D3_SCREENSHOT_FRAME=2500`, `D3_METAL_STATS=1`,
-`D3_FS_TRACE=1`, `D3_SOUND_STATS=1` (what was decoded and how loud the output is),
+`D3_FS_TRACE=1`, `D3_TEXTURE_LIST=1`, `D3_DRAW_LOG=<frame>` and `D3_DRAW_SWEEP=<frame>,<n>`
+(list a frame's draws; leave out a different slice of them each frame, to find the
+one that draws wrongly), `D3_SOUND_STATS=1` (what was decoded and how loud the output is),
 `D3_SOUND_DUMP=<directory>` (first decoded samples as WAV), `D3_NO_SOUND=1`.
 
 ## Measuring progress
