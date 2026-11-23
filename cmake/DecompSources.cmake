@@ -41,7 +41,51 @@ execute_process(COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/link_
 if(NOT _status EQUAL 0)
     message(FATAL_ERROR "tools/link_order.py failed")
 endif()
+# ---- mods: deliberate changes to the game, off by default ----
+# The decomp itself is never edited. A mod compiles a patched copy of one source
+# file, written to the build directory by tools/patch_source.py, in place of the
+# original (same position in the link order).
+function(d3_patch_source relative)
+    set(_original "${D3_DECOMP_ROOT}/src/${relative}")
+    set(_patched "${CMAKE_BINARY_DIR}/generated/mods/${relative}")
+    list(FIND D3_DECOMP_SOURCES "${_original}" _at)
+    if(_at EQUAL -1)
+        message(FATAL_ERROR "mod: ${relative} is not among the decomp's sources")
+    endif()
+    set(_replacements)
+    foreach(_text IN LISTS ARGN)
+        list(APPEND _replacements "${_text}")
+    endforeach()
+    add_custom_command(OUTPUT "${_patched}"
+        COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/patch_source.py" "${_original}" "${_patched}" ${_replacements}
+        DEPENDS "${_original}" "${PROJECT_SOURCE_DIR}/tools/patch_source.py"
+        COMMENT "Mod: patching a copy of ${relative}" VERBATIM)
+    list(REMOVE_AT D3_DECOMP_SOURCES ${_at})
+    list(INSERT D3_DECOMP_SOURCES ${_at} "${_patched}")
+    set(D3_DECOMP_SOURCES "${D3_DECOMP_SOURCES}" PARENT_SCOPE)
+    # The copy still finds the headers that the original includes by relative path.
+    get_filename_component(_dir "${_original}" DIRECTORY)
+    set_property(GLOBAL APPEND PROPERTY D3_PATCHED_SOURCES "${_patched}|${_dir}")
+endfunction()
+
+# D3_MOD_RUN_SPEED=2 makes heroes walk, run and sprint at twice the game's speed.
+set(D3_MOD_RUN_SPEED "" CACHE STRING "Mod: multiply the heroes' movement speed by this number (empty: unchanged)")
+if(D3_MOD_RUN_SPEED)
+    message(STATUS "Mod: hero movement speed x${D3_MOD_RUN_SPEED}")
+    d3_patch_source("X/Server/SHero.cpp"
+        --replace "pHero->flAttributesWalkSpeed);" "pHero->flAttributesWalkSpeed * ${D3_MOD_RUN_SPEED}f);"
+        --replace "pHero->flAttributesRunSpeed);" "pHero->flAttributesRunSpeed * ${D3_MOD_RUN_SPEED}f);"
+        --replace "pHero->flAttributesSprintSpeed);" "pHero->flAttributesSprintSpeed * ${D3_MOD_RUN_SPEED}f);")
+endif()
+
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
+get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
+foreach(_entry IN LISTS _patched_sources)
+    string(REPLACE "|" ";" _pair "${_entry}")
+    list(GET _pair 0 _file)
+    list(GET _pair 1 _dir)
+    set_source_files_properties("${_file}" TARGET_DIRECTORY d3_decomp PROPERTIES INCLUDE_DIRECTORIES "${_dir}")
+endforeach()
 target_link_libraries(d3_decomp PRIVATE d3_decomp_flags)
 
 # Libraries the original built with `char` unsigned (recorded in its debug info).

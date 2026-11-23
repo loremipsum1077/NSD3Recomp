@@ -85,6 +85,16 @@ language code), `D3_PLAYER_NAME=...`, `D3_NVN_TRACE=frames` or `all`,
 one that draws wrongly), `D3_SOUND_STATS=1` (what was decoded and how loud the output is),
 `D3_SOUND_DUMP=<directory>` (first decoded samples as WAV), `D3_NO_SOUND=1`.
 
+## Mods
+
+A deliberate change to the game is made here, never in the decomp, which has to stay
+identical to the original. A mod is a build option that compiles a patched copy of
+one decomp source file in place of the original (`cmake/DecompSources.cmake`,
+`tools/patch_source.py`). All mods are off by default.
+
+- `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
+  game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
+
 ## Measuring progress
 
 ```sh
