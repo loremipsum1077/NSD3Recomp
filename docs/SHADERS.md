@@ -164,8 +164,11 @@ Things that only showed up once translated shaders were drawing (2026-11-22):
 
 - **Where the code ends.** After the instructions come the literal pool and padding,
   and those bytes often decode as plausible instructions. The control block gives the
-  end of the instructions at offset 0x6f8; the driver cuts the code there before the
-  translator sees it. Most earlier "unsupported instruction" reports were this.
+  length of the instructions at offset 0x6f8, not counting the 0x30-byte header in
+  front of them; the driver cuts the code at that length plus 0x30 before the
+  translator sees it. (Until 2026-11-22 the header was not added, which cut up to six
+  instructions off the end of some shaders: glows came out white because their last
+  colour and alpha instructions were missing.) Most earlier "unsupported instruction" reports were this.
 - **The vertex number** is read as an attribute at `a[0x2fc]` (the instance number at
   `a[0x2f8]`). Full-screen passes build their corners from it.
 - **3D textures are laid out differently from 2D ones**: blocks are one tile high and

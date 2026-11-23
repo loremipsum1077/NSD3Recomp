@@ -1075,9 +1075,10 @@ int ProgramSetShaders(ProgramState * p, int count, const ShaderData * shaders)
         {
             uint32_t end;
             memcpy(&end, static_cast<const uint8_t *>(shaders[0].control) + 0x6f8, 4);
-            if (end >= 0x80 && end <= size)
+            // The count leaves out the 0x30-byte header in front of the instructions.
+            if (end >= 0x50 && end + 0x30 <= size)
             {
-                instructionBytes = end;
+                instructionBytes = end + 0x30;
             }
         }
         id<MTLFunction> function = FunctionFor(code, size, instructionBytes, &p->stage, &p->hash);
