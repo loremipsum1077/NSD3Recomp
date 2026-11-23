@@ -12,6 +12,8 @@
 
 // D3_NVN_TRACE=all prints every driver call. D3_NVN_TRACE=frames prints one line
 // per 60 frames the game presents, which is the quickest way to see that it is alive.
+// D3_NVN_TRACE=new prints each entry point the first time it is called: with the
+// Metal driver active these are the calls that still do nothing.
 void d3_nvn_called(const char * name)
 {
     static int trace = -1;
@@ -19,11 +21,28 @@ void d3_nvn_called(const char * name)
     if (trace < 0)
     {
         const char * mode = getenv("D3_NVN_TRACE");
-        trace = !mode ? 0 : strcmp(mode, "frames") == 0 ? 2 : 1;
+        trace = !mode ? 0 : strcmp(mode, "frames") == 0 ? 2 : strcmp(mode, "new") == 0 ? 3 : 1;
     }
     if (trace == 1)
     {
         fprintf(stderr, "nvn: %s\n", name);
+    }
+    else if (trace == 3)
+    {
+        static const char * seen[512];
+        static int count;
+        for (int i = 0; i < count; i++)
+        {
+            if (seen[i] == name)
+            {
+                return;
+            }
+        }
+        if (count < 512)
+        {
+            seen[count++] = name;
+            fprintf(stderr, "nvn: first call of %s\n", name);
+        }
     }
     else if (trace == 2 && strcmp(name, "nvnQueuePresentTexture") == 0 && ++frames % 60 == 0)
     {

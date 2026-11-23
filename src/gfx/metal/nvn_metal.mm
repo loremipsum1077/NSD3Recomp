@@ -115,6 +115,7 @@ struct TextureDesc {                // TextureBuilder is 0x80 bytes
     uint8_t swizzle[4];             // which source channel each of r, g, b, a reads: 0 zero, 1 one, 2 r, 3 g, 4 b, 5 a
     PoolState * pool;
     ptrdiff_t offset;
+    ptrdiff_t stride;               // bytes per row of a plain-row ("linear") texture; 0 if not set
 };
 
 struct TextureState {               // Texture is 0xc0 bytes
@@ -423,7 +424,19 @@ void TextureBuilderSetFlags(TextureDesc * b, int flags) { b->flags = flags; }
 void TextureBuilderSetLevels(TextureDesc * b, int levels) { b->levels = levels < 1 ? 1 : levels; }
 void TextureBuilderSetStorage(TextureDesc * b, PoolState * pool, ptrdiff_t offset) { b->pool = pool; b->offset = offset; }
 
+void TextureBuilderSetStride(TextureDesc * b, ptrdiff_t stride) { b->stride = stride; }
+
 size_t AlignUp(size_t v, size_t a) { return (v + a - 1) / a * a; }
+
+// A texture made with the LINEAR flag keeps its texels as plain rows, not in the
+// tiled layout. The game writes into these directly (it asks for the row size) and
+// rewrites them while running.
+const int kTextureFlagLinear = 0x10;
+
+size_t RowStride(const TextureDesc & d)
+{
+    return d.stride > 0 ? static_cast<size_t>(d.stride) : static_cast<size_t>(d.width) * Format(d.format).bytes;
+}
 
 // Size of one mip level in the Switch GPU's block-linear layout: rows of 64-byte
 // by 8-row tiles, stacked into blocks of up to 16 tiles that shrink for small levels.
@@ -442,6 +455,10 @@ size_t LevelSize(const FormatInfo & f, int w, int h, int layers)
 size_t TextureBuilderGetStorageSize(const TextureDesc * b)
 {
     FormatInfo f = Format(b->format);
+    if (b->flags & kTextureFlagLinear)
+    {
+        return AlignUp(RowStride(*b) * b->height, 0x1000);
+    }
     int layers = b->target == 8 ? 6 : b->target == 2 ? 1 : b->depth > 1 && b->target == 4 ? b->depth : 1;
     size_t total = 0;
     for (int level = 0; level < b->levels; level++)
@@ -520,6 +537,7 @@ void TextureFinalize(TextureState * t)
     }
 }
 
+ptrdiff_t TextureGetStride(const TextureState * t) { return static_cast<ptrdiff_t>(RowStride(t->desc)); }
 int TextureGetWidth(const TextureState * t) { return t->desc.width; }
 int TextureGetHeight(const TextureState * t) { return t->desc.height; }
 int TextureGetFormat(const TextureState * t) { return t->desc.format; }
@@ -700,6 +718,19 @@ void TextureFlushTexels(TextureState * t, const void * view, const void * region
             {
                 fprintf(stderr, "metal: 3D texture %dx%dx%d format %d uploaded\n", t->desc.width, t->desc.height, t->desc.depth, t->desc.format);
             }
+        }
+        return;
+    }
+    if (t->desc.flags & kTextureFlagLinear)
+    {
+        @autoreleasepool
+        {
+            [texture replaceRegion:MTLRegionMake2D(0, 0, t->desc.width, t->desc.height)
+                       mipmapLevel:0
+                             slice:0
+                         withBytes:static_cast<const uint8_t *>(t->desc.pool->memory) + t->desc.offset
+                       bytesPerRow:RowStride(t->desc)
+                     bytesPerImage:0];
         }
         return;
     }
@@ -1564,14 +1595,41 @@ void SaveScreenshot(id<MTLTexture> texture, const char * path)
     CGColorSpaceRelease(space);
 }
 
-// D3_SCREENSHOT=<file.png> saves the frame presented at D3_SCREENSHOT_FRAME (default 300).
+// D3_SCREENSHOT=<file.png> saves the frame presented at D3_SCREENSHOT_FRAME (default
+// 300). Several frames can be listed, separated by commas; each is then saved as
+// <file>-<frame>.png.
 void MaybeScreenshot(id<MTLTexture> texture)
 {
     static const char * path = getenv("D3_SCREENSHOT");
-    static unsigned at = getenv("D3_SCREENSHOT_FRAME") ? static_cast<unsigned>(atoi(getenv("D3_SCREENSHOT_FRAME"))) : 300;
-    if (path && g_frame == at && texture.storageMode != MTLStorageModePrivate)
+    static const char * frames = getenv("D3_SCREENSHOT_FRAME") ? getenv("D3_SCREENSHOT_FRAME") : "300";
+    if (!path || texture.storageMode == MTLStorageModePrivate)
     {
-        SaveScreenshot(texture, path);
+        return;
+    }
+    bool many = strchr(frames, ',') != nullptr;
+    for (const char * p = frames; *p;)
+    {
+        char * end;
+        unsigned long at = strtoul(p, &end, 10);
+        if (end == p)
+        {
+            break;
+        }
+        if (at == g_frame)
+        {
+            char name[1100];
+            const char * dot = strrchr(path, '.');
+            if (many && dot)
+            {
+                snprintf(name, sizeof name, "%.*s-%lu%s", static_cast<int>(dot - path), path, at, dot);
+            }
+            else
+            {
+                snprintf(name, sizeof name, "%s", path);
+            }
+            SaveScreenshot(texture, name);
+        }
+        p = *end == ',' ? end + 1 : end;
     }
 }
 
@@ -1617,10 +1675,13 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
         g_commands = nil;
         if (done)
         {
+            // Wait for the GPU to finish the frame. The game writes the next frame's
+            // vertices into the same memory the GPU reads from (nothing is copied), and
+            // on the Switch presenting holds it back long enough for that to be safe.
             [done commit];
+            [done waitUntilCompleted];
             if (getenv("D3_SCREENSHOT") && source)
             {
-                [done waitUntilCompleted];
                 MaybeScreenshot(source);
             }
         }
@@ -1639,6 +1700,8 @@ extern "C" const d3_nvn_entry d3_nvn_metal_overrides[] = {
     {"nvnTextureBuilderSetFlags", (d3_nvn_function)TextureBuilderSetFlags},
     {"nvnTextureBuilderSetLevels", (d3_nvn_function)TextureBuilderSetLevels},
     {"nvnTextureBuilderSetStorage", (d3_nvn_function)TextureBuilderSetStorage},
+    {"nvnTextureBuilderSetStride", (d3_nvn_function)TextureBuilderSetStride},
+    {"nvnTextureGetStride", (d3_nvn_function)TextureGetStride},
     {"nvnTextureBuilderSetSwizzle", (d3_nvn_function)TextureBuilderSetSwizzle},
     {"nvnTextureBuilderGetStorageSize", (d3_nvn_function)TextureBuilderGetStorageSize},
     {"nvnTextureBuilderGetStorageAlignment", (d3_nvn_function)TextureBuilderGetStorageAlignment},

@@ -118,7 +118,9 @@ has not been observed: with no controller there is no way to skip them yet.
 - [ ] The class video panel is solid green. No video frame is ever handed to the driver, so this is not a drawing fault: playback is not running. The video archives are opened at start-up (`enUS_CommonCutscene.cpk` and the per-act ones), so the data is found. Suspected, not confirmed: playback is tied to sound, which is off
 - [ ] 2 start-up shaders do not translate (three integer instruction forms)
 - [ ] The first run has no translated shaders and draws nothing; translation should happen inside the program
+- [x] Plain-row ("linear") textures: row size reported to the game and contents uploaded as rows
 - [ ] Not implemented in the driver: scissor, stencil-cull criteria, array textures, mip levels of 3D textures, texture views, non-indexed draws
+- [ ] Each frame waits for the GPU to finish before the game continues. Simple and safe, but it will cost frame rate on heavier scenes
 - [ ] Not checked: anything beyond Hero Creation; resizing the window; whether colours are exact (sRGB handling was not examined)
 - [ ] UI rendering and fonts
 - [ ] Not verified: input with a real controller (none was attached), window close, and whether the game's menus respond to the keys as mapped
@@ -132,8 +134,10 @@ walk under stick input. The game wrote account, profile and hero files to `save/
 - [x] Hero creation through to the first area, by scripted input
 - [x] World, hero, lighting and shadows, HUD and minimap are drawn
 - [x] Movement with the left stick
-- [ ] Visible defects in the first area: the health globe is empty, and a tall thin streak is drawn above the hero
-- [ ] Fighting, picking things up, talking to characters, menus: none tried
+- [x] Attacking: the A button plays the attack and a monster walks into view. Whether hits land and monsters die has not been confirmed
+- [ ] **Cloth pieces on the hero are drawn stretched into long streaks.** Established: the streaks are the hero's cloth draws (they vanish when draws using two vertex streams are skipped); the shader translation, the constants and the vertex layout for those draws check out; frames now wait for the GPU, which ruled out memory being overwritten early. Not established: why some cloth vertices sit far from the rest. The simulation's output had one vertex 5.7 units from its cloth's centre on the Hero Creation screen. The decomp lists three cloth functions as not matching the original (`Cloth::CopyToAsyncVertices`, `Cloth::Staple`, `ClothUpdate`), which makes them the next place to look
+- [ ] Picking things up, talking to characters, in-game menus: none tried
+- (Not a defect: the empty globe is the Barbarian's Fury, which starts empty.)
 - [ ] Whether a saved hero loads again on the next run: not checked (the second run created another hero)
 - [ ] Hero names: the on-screen keyboard answers with `D3_HERO_NAME` or "Hero"; there is no text entry
 
