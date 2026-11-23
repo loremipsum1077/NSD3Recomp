@@ -2,4 +2,3 @@
 // Added by tools/gen_stubs.py; delete a line when the real function is written.
 #include "host/unimplemented.h"
 
-D3_STUB(_ZN2nn3nsd9ResolveExEPNS0_4FqdnERKS1_, "nn::nsd::ResolveEx(nn::nsd::Fqdn*, nn::nsd::Fqdn const&)")
