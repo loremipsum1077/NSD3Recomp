@@ -122,6 +122,24 @@ if(D3_MOD_CAMERA_DISTANCE)
                   "Vector3D wvModFrom = csThis.wvLookFrom$<SEMICOLON> wvModFrom.x = csThis.wvLookAt.x + (csThis.wvLookFrom.x - csThis.wvLookAt.x) * ${_k}$<SEMICOLON> wvModFrom.y = csThis.wvLookAt.y + (csThis.wvLookFrom.y - csThis.wvLookAt.y) * ${_k}$<SEMICOLON> wvModFrom.z = csThis.wvLookAt.z + (csThis.wvLookFrom.z - csThis.wvLookAt.z) * ${_k}$<SEMICOLON> csThis.transform.Set(wvModFrom, csThis.wvLookAt, cgwvZAxis)$<SEMICOLON>")
 endif()
 
+# D3_MOD_SEASON=1 makes a season active without the online service. Normally the
+# season's number and state arrive from the servers; here they start out as "season
+# <number>, active", the game is told the season data has arrived, and the check made
+# with the server when a seasonal hero is created answers yes.
+set(D3_MOD_SEASON "" CACHE STRING "Mod: make this season number active offline (empty: no season)")
+if(D3_MOD_SEASON)
+    if(NOT D3_MOD_SEASON MATCHES "^[0-9]+$")
+        message(FATAL_ERROR "D3_MOD_SEASON must be a season number")
+    endif()
+    message(STATUS "Mod: season ${D3_MOD_SEASON} active offline")
+    d3_patch_source("X/Common/OnlineService/OnlineService.cpp"
+        --replace "DEFAULT_SEASON_NUM = 1$<SEMICOLON>" "DEFAULT_SEASON_NUM = ${D3_MOD_SEASON}$<SEMICOLON>"
+        --replace "DEFAULT_SEASON_STATE = 0$<SEMICOLON>" "DEFAULT_SEASON_STATE = 1$<SEMICOLON>")
+    d3_patch_source("X/Client/Console/LobbyService.cpp"
+        --replace "blz::atomic_bool sbSeasonsInitialized(false)$<SEMICOLON>" "blz::atomic_bool sbSeasonsInitialized(true)$<SEMICOLON>"
+        --replace "::execute>(pfnCallback, FALSE))$<SEMICOLON>" "::execute>(pfnCallback, TRUE))$<SEMICOLON>")
+endif()
+
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
 get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
 foreach(_entry IN LISTS _patched_sources)

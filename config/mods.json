@@ -27,5 +27,13 @@
     "type": "number",
     "default": "2.0",
     "pattern": "^[0-9]{1,2}(\\.[0-9]{1,3})?$"
+  },
+  {
+    "id": "D3_MOD_SEASON",
+    "title": "Seasons (offline)",
+    "description": "Make a season active without Blizzard's servers, so seasonal heroes can be created. The value is the season number. Leaderboards and other online parts of seasons stay unavailable.",
+    "type": "number",
+    "default": "1",
+    "pattern": "^[0-9]{1,3}$"
   }
 ]

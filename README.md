@@ -104,6 +104,9 @@ it offers are listed in `config/mods.json`.
   raised to match. Turn it off with `-DD3_MOD_RENDER_SIZE=`.
 - `-DD3_MOD_CAMERA_DISTANCE=1.5`: move the in-game camera to that multiple of its
   normal distance from the hero. Turn it off with `-DD3_MOD_CAMERA_DISTANCE=`.
+- `-DD3_MOD_SEASON=1`: make that season number active without the online service,
+  so the Season Journey and seasonal heroes are available. Leaderboards and the other
+  online parts of seasons stay unavailable. Turn it off with `-DD3_MOD_SEASON=`.
 - `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
 
