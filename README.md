@@ -79,13 +79,38 @@ decompiled game source also stays in its own repository and is referenced by pat
 | `save/`, `cache/` | **Ignored by git.** Save files; captured and translated shaders |
 | `build/` | **Ignored by git.** Build output |
 
+## Getting the game files
+
+Nothing from the game is in this repository or the decomp, and nobody can give it to
+you. You make it yourself from a copy you own:
+
+1. **Own the game.** Diablo III: Eternal Collection for Nintendo Switch (title ID
+   `01001B300B9BE000`), on cartridge or from the eShop.
+2. **Have version 2.6.2.52309.** The title screen shows it in small print at the
+   bottom (`C2.6.2.52309`). Any other version, older or newer, will not match.
+   This is the version on the cartridge, with no updates installed. A copy that has
+   been updated to a later version will not match.
+3. **Dump it from your own Switch.** This needs a console that can run homebrew and
+   a dumping tool such as nxdumptool, which reads the installed game with your
+   console's own keys. Follow that tool's documentation. This project does not
+   provide keys, firmware or instructions for getting around the console's
+   protections; do not download the game or keys from anywhere else.
+4. **Extract the program's ExeFS and RomFS** into `game/exefs/` and `game/romfs/`
+   here. Allow about 30 GB of free space while extracting.
+5. **Check them** from the decomp checkout:
+   `python3 -B tools/verify_original_inputs.py --input-root ../NSD3Recomp/game`.
+   It reports exactly which file is missing or does not match.
+
+`game/` is ignored by git. Keep the dump private: do not commit, upload or share it.
+
 ## Setup
 
 1. Check out NSDiablo3Decomp next to this repository (`../NSDiablo3Decomp`), or point
    `D3_DECOMP_DIR` at it.
-2. Put your own Diablo III 2.6.2 dump in `game/`: the program in `game/exefs/`
-   (`main`) and the RomFS contents in `game/romfs/` (including
-   `DiabloIIINX64r.nss`). The build reads both.
+2. Put your own dump of the game in `game/` (see [Getting the game files](#getting-the-game-files)):
+   the program in `game/exefs/` (`main`) and the whole RomFS in `game/romfs/`
+   (including `DiabloIIINX64r.nss`). The build reads both, and the game reads its
+   data from `game/romfs/` when it runs.
 3. Generate the decomp's private inputs (game Protobuf bindings and data tables)
    from that dump, once, in the decomp checkout:
 

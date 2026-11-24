@@ -26,7 +26,7 @@ passes on a clean checkout, not before.
 - [x] Compile probe (`tools/compile_probe.py`)
 - [ ] Decide how the decomp is pinned: git submodule at a fixed commit, or a recorded commit hash checked at configure time
 - [ ] `tools/verify_game.py`: confirm the dump in `game/` is version 2.6.2 by file hashes, and report what is missing
-- [ ] Document how to produce the dump from one's own copy
+- [x] Document how to produce the dump from one's own copy (README, "Getting the game files")
 - [x] Licence: MIT for this repository's own code (`LICENSE`)
 - [ ] Contribution rules
 
