@@ -10,7 +10,9 @@
 #include <unistd.h>
 
 #include <map>
+#include <atomic>
 #include <mutex>
+#include <pthread.h>
 
 namespace {
 
@@ -76,7 +78,28 @@ ThreadType * GetCurrentThread()
 {
     if (!t_current)
     {
-        t_current = &g_mainThread;      // the thread that entered main, or one the host made
+        // The thread that entered main is the game's main thread. Any other thread the
+        // host made (the sound loader, SDL's audio thread) needs an identity of its own:
+        // sharing the main thread's made a recursive mutex held by the main thread look
+        // already owned by the caller, so both entered the game's heap at once.
+        static std::atomic<bool> mainClaimed{false};
+#ifdef __APPLE__
+        bool isMain = pthread_main_np() != 0;
+#else
+        bool isMain = !mainClaimed.exchange(true);
+#endif
+        if (isMain)
+        {
+            mainClaimed = true;
+            t_current = &g_mainThread;
+        }
+        else
+        {
+            static thread_local ThreadType hostThread;
+            hostThread.handle = pthread_self();
+            hostThread.state = 2;
+            t_current = &hostThread;
+        }
     }
     return t_current;
 }
