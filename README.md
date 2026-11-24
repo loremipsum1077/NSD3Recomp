@@ -183,6 +183,8 @@ The easy way to choose them: double-click `Mods.command` (or run
 only, with a checkbox for each mod, a Build button and a Start game button. The mods
 it offers are listed in `config/mods.json`.
 
+<img src="docs/images/mods-page.png" alt="The Mods page: higher resolution, pulled-back camera, faster heroes and offline seasons, with Build and Start game buttons" width="600">
+
 - `-DD3_MOD_RENDER_SIZE=2560x1440`: draw the game at that size instead of the
   Switch's docked 1600x900. The game's memory budget for screen-sized buffers is
   raised to match. Turn it off with `-DD3_MOD_RENDER_SIZE=`.
