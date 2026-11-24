@@ -38,10 +38,15 @@ file(GLOB_RECURSE D3_PLATFORM_SOURCES CONFIGURE_DEPENDS
     src/gfx/*.mm)
 # Default entry points of the do-nothing graphics driver, from the decomp's NVN header.
 set(D3_NVN_NULL "${CMAKE_BINARY_DIR}/generated/nvn_null_defaults.c")
+# NSDiablo3Decomp's bootstrap writes the entry-point names to this file instead of the header.
+set(_nvn_entries "${D3_DECOMP_ROOT}/src/X/Common/generated-game-data/nvn_entry_points.inc")
+if(NOT EXISTS "${_nvn_entries}")
+    set(_nvn_entries "")
+endif()
 add_custom_command(OUTPUT "${D3_NVN_NULL}"
     COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/gen_nvn_null.py" "${D3_DECOMP_ROOT}" "${D3_NVN_NULL}"
     DEPENDS tools/gen_nvn_null.py "${D3_DECOMP_ROOT}/src/NintendoSDK/Include/nvn/nvn_CppFuncPtrImpl.h"
-            "${D3_DECOMP_ROOT}/src/NintendoSDK/Include/nvn/nvn_Cpp.h"
+            "${D3_DECOMP_ROOT}/src/NintendoSDK/Include/nvn/nvn_Cpp.h" ${_nvn_entries}
     COMMENT "Generating the do-nothing graphics driver's entry points")
 add_library(d3_platform OBJECT ${D3_PLATFORM_SOURCES} "${D3_NVN_NULL}")
 # Window and input. SDL2 must be installed (on macOS: Homebrew's sdl2).

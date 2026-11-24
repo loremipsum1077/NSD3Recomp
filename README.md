@@ -1,14 +1,35 @@
 # NSD3Recomp
 
 A native port of **Diablo III 2.6.2 (Nintendo Switch)**, built by recompiling the
-decompiled source from [NSD3Decomp](https://github.com/loremipsum1077/NSD3Decomp)
+decompiled source from [NSDiablo3Decomp](https://github.com/loremipsum1077/NSDiablo3Decomp)
 for desktop platforms. macOS on Apple silicon is the first target.
 
-**Status: the game does not run yet.** The decomp compiles and links into one
-macOS executable. It starts, loads its data, and draws the game's Hero Creation
-menu and the game world in a window through Metal, with keyboard and controller
-input and with sound. Parts of the picture are still missing and play beyond
-walking and attacking in the first area has not been tried. See the [roadmap](docs/ROADMAP.md).
+**Status: playable from a cold start into Act I.** Every decomp source file
+compiles and links into one macOS executable that runs from your own game data.
+Checked on 2026-11-23 by scripted runs:
+
+- Start-up, the gamma and safe-area screens, the welcome dialogs and the main menu.
+- Hero Creation, including the class video panel and seasonal heroes (with the
+  season mod), then the intro story and the first area, Overlook Road.
+- Walking, attacking and killing monsters, gaining experience and a level, unlocking
+  a skill, quest progress and checkpoints, and reaching New Tristram.
+- Talking to a merchant and opening the shop.
+- Saving: the hero is written to `save/`, and on the next start the main menu offers
+  Continue and the same hero loads back in.
+- Sound plays through a replacement for FMOD: in a three-minute run about 1,700
+  sounds were decoded, none failed, and up to 43 played at once.
+
+Not working or not tried yet:
+
+- Nothing past New Tristram has been tried: later quests, dungeons, bosses, other acts.
+- Picking up and equipping items, the inventory and skill menus, and dying and
+  respawning were not checked.
+- Hero names come from `D3_HERO_NAME` (or "Hero"): there is no on-screen keyboard.
+- The first run draws nothing until shaders are translated (see Setup).
+- Online features are absent by design: network calls behave like a console with
+  nothing attached, and console system dialogs do nothing.
+
+See the [roadmap](docs/ROADMAP.md) for the detail.
 
 ## What is and is not in this repository
 
@@ -23,23 +44,38 @@ decompiled game source also stays in its own repository and is referenced by pat
 
 | Path | Purpose |
 |---|---|
-| `src/host/` | Program entry, window and main loop |
+| `src/host/` | Program entry, window, main loop, crash reporter |
+| `src/nn/` | The Switch SDK services the game calls (`os`, `fs`, `hid`, `account`, ...), on macOS |
+| `src/gfx/` | The NVN graphics driver: `metal/` draws, `null/` draws nothing |
+| `src/audio/` | The FMOD functions the game uses, on a software mixer through SDL |
+| `src/libc/`, `src/replace/` | Switch libc pieces and functions the decomp has no source for |
 | `src/compat/` | Headers that let the decomp compile with a host compiler |
-| `src/` (more) | Platform layers, added per milestone: see [architecture](docs/ARCHITECTURE.md) |
-| `cmake/` | Build helpers, including how the decomp is located |
-| `tools/` | Progress meters and data checks |
-| `docs/` | Roadmap, architecture |
+| `src/shader/` | Switch GPU instruction table used by the shader translator |
+| `cmake/` | Build helpers, including how the decomp is located and how mods patch it |
+| `config/` | Data symbols to extract from the dump; the list of mods |
+| `tools/` | Shader translator, mods page, data extraction, progress meters |
+| `docs/` | [Roadmap](docs/ROADMAP.md), [architecture](docs/ARCHITECTURE.md), [shaders](docs/SHADERS.md) |
 | `game/` | **Ignored by git.** Your game dump |
+| `save/`, `cache/` | **Ignored by git.** Save files; captured and translated shaders |
 | `build/` | **Ignored by git.** Build output |
 
 ## Setup
 
-1. Check out NSD3Decomp next to this repository (`../NSD3Decomp`), or point
+1. Check out NSDiablo3Decomp next to this repository (`../NSDiablo3Decomp`), or point
    `D3_DECOMP_DIR` at it.
 2. Put your own Diablo III 2.6.2 dump in `game/`: the program in `game/exefs/`
    (`main`) and the RomFS contents in `game/romfs/` (including
    `DiabloIIINX64r.nss`). The build reads both.
-3. Build:
+3. Generate the decomp's private inputs (game Protobuf bindings and data tables)
+   from that dump, once, in the decomp checkout:
+
+```sh
+cd ../NSDiablo3Decomp
+python3 tools/bootstrap_game_data.py ../NSD3Recomp/game --build-protoc
+cd ../NSD3Recomp
+```
+
+4. Build:
 
 ```sh
 cmake --preset macos
@@ -79,12 +115,15 @@ The same table is on the Mods page (`Mods.command`).
 ## Useful switches
 
 Environment variables: `D3_HEADLESS=1` (no window), `D3_LANGUAGE=fr` (a Switch
-language code), `D3_PLAYER_NAME=...`, `D3_NVN_TRACE=frames` or `all`,
+language code), `D3_PLAYER_NAME=...` (account nickname), `D3_HERO_NAME=...` (the
+answer to the game's name prompt), `D3_GAME_DIR`, `D3_SAVE_DIR` and
+`D3_SHADER_CACHE` (other folders than `game/`, `save/` and `cache/shaders/`),
+`D3_NVN_TRACE=frames` or `all`,
 `D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds),
 `D3_SCREENSHOT=file.png` with `D3_SCREENSHOT_FRAME=2500`, `D3_METAL_STATS=1`,
 `D3_FS_TRACE=1`, `D3_TEXTURE_LIST=1`, `D3_DRAW_LOG=<frame>` and `D3_DRAW_SWEEP=<frame>,<n>`
 (list a frame's draws; leave out a different slice of them each frame, to find the
-one that draws wrongly), `D3_SOUND_STATS=1` (what was decoded and how loud the output is),
+one that draws wrongly), `D3_METAL_PIPELINES=1`, `D3_SHADER_SKIP=<hash>,...`, `D3_SOUND_STATS=1` (what was decoded and how loud the output is),
 `D3_SOUND_DUMP=<directory>` (first decoded samples as WAV), `D3_NO_SOUND=1`.
 
 ## Mods

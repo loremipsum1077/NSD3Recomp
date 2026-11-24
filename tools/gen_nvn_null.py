@@ -19,6 +19,12 @@ types = {}
 for m in re.finditer(r"^typedef\s+(.*?)\s*\(\*\s*(\w+Func)\s*\)", (inc / "nvn_Cpp.h").read_text(), re.M):
     types[m.group(2)] = m.group(1).strip()
 entries = re.findall(r"=\s*\((\w+Func)\)\s*getProc\(device,\s*\"(nvn\w+)\"\)", (inc / "nvn_CppFuncPtrImpl.h").read_text())
+# NSDiablo3Decomp no longer lists the names in the header: its bootstrap writes them,
+# one NVN_ENTRY(name) per line, to a file the header includes.
+generated = root / "src/X/Common/generated-game-data/nvn_entry_points.inc"
+if len(entries) < 100 and generated.exists():
+    entries = [(n + "Func", "nvn" + n)
+               for n in re.findall(r"^NVN_ENTRY\((\w+)\)", generated.read_text(), re.M)]
 if len(entries) < 100:
     sys.exit("gen_nvn_null: could not read the entry-point list from the decomp's NVN header")
 
