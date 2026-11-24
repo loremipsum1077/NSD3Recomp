@@ -4,6 +4,12 @@ A native port of **Diablo III 2.6.2 (Nintendo Switch)**, built by recompiling th
 decompiled source from [NSDiablo3Decomp](https://github.com/loremipsum1077/NSDiablo3Decomp)
 for desktop platforms. macOS on Apple silicon is the first target.
 
+> **Not affiliated with Blizzard Entertainment or Nintendo.** This is an unofficial
+> fan project, not endorsed by either company. Diablo is a trademark of Blizzard
+> Entertainment, Inc.; Nintendo Switch is a trademark of Nintendo. This repository
+> contains no game data, game code or Nintendo SDK material. To use it you need
+> your own legally obtained copy of Diablo III: Eternal Collection for Nintendo Switch.
+
 **Status: playable from a cold start into Act I.** Every decomp source file
 compiles and links into one macOS executable that runs from your own game data.
 Checked on 2026-11-23 by scripted runs:
@@ -164,3 +170,11 @@ missing at link time:
 cmake --build build/macos --target d3_decomp -- -k 0
 python3 tools/link_probe.py
 ```
+
+## Licence
+
+The code in this repository is under the [MIT licence](LICENSE). That covers only
+what is written here. It grants nothing for the game, its data, the decompiled
+source in NSDiablo3Decomp, or anything from Nintendo's SDK. The Switch GPU
+instruction table in `src/shader/` comes from envytools and keeps its own MIT
+licence (`src/shader/LICENSE-envytools`).
