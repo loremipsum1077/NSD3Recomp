@@ -37,6 +37,20 @@ Not working or not tried yet:
 
 See the [roadmap](docs/ROADMAP.md) for the detail.
 
+## Screenshots
+
+Captured on an Apple silicon Mac, drawn at 2560x1440 with the camera pulled back to
+1.5x its normal distance (the render-size and camera mods, see [Mods](#mods)).
+
+| | |
+|---|---|
+| ![Fighting the risen dead at the gates of New Tristram](docs/images/combat-gates.jpg) | ![A ten-kill massacre bonus at the gates](docs/images/massacre.jpg) |
+| Fighting at the gates of New Tristram | Ten kills at once: the massacre bonus |
+| ![New Tristram at night, beside the stash](docs/images/new-tristram.jpg) | ![Buying from Tashun the Miner](docs/images/merchant.jpg) |
+| New Tristram, beside the stash | A merchant's shop |
+| ![The stash holding the Signet Ring of the Blizzard](docs/images/stash-ring.jpg) | |
+| The stash, with the Signet Ring of the Blizzard | |
+
 ## What is and is not in this repository
 
 In: the build system, the platform layer that replaces the Switch SDK (system
