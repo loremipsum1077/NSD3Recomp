@@ -10,30 +10,35 @@ for desktop platforms. macOS on Apple silicon is the first target.
 > contains no game data, game code or Nintendo SDK material. To use it you need
 > your own legally obtained copy of Diablo III: Eternal Collection for Nintendo Switch.
 
-**Status: playable from a cold start into Act I.** Every decomp source file
-compiles and links into one macOS executable that runs from your own game data.
-Checked on 2026-11-23 by scripted runs:
+**Status: the whole game should be playable, though not all of it has been verified.**
+Every decomp source file compiles and links into one macOS executable that runs from
+your own game data. The campaign has been played from a cold start into Act V, and
+Adventure Mode works: the world map with bounties, Nephalem Rifts opened from the
+obelisk, and the Act V town. Nothing seen so far points to a part of the game that
+does not work. Seen working, in play and in scripted runs on 2026-11-23:
 
 - Start-up, the gamma and safe-area screens, the welcome dialogs and the main menu.
 - Hero Creation, including the class video panel and seasonal heroes (with the
-  season mod), then the intro story and the first area, Overlook Road.
-- Walking, attacking and killing monsters, gaining experience and a level, unlocking
-  a skill, quest progress and checkpoints, and reaching New Tristram.
-- Talking to a merchant and opening the shop.
-- Saving: the hero is written to `save/`, and on the next start the main menu offers
-  Continue and the same hero loads back in.
-- Sound plays through a replacement for FMOD: in a three-minute run about 1,700
-  sounds were decoded, none failed, and up to 43 played at once.
+  season mod), then the intro story and the first area.
+- Combat, experience and levels, skills, quests, checkpoints and waypoints, towns,
+  merchants and the stash.
+- Adventure Mode: bounties on the world map, the Nephalem obelisk and rifts.
+- Dying, and the resurrect choices that follow.
+- Saving: heroes and progress are written to `save/`, and the same hero loads back
+  in on the next start.
+- Sound, through a replacement for FMOD: in a three-minute run about 1,700 sounds
+  were decoded, none failed, and up to 43 played at once.
 
-Not working or not tried yet:
+Not verified yet, or not working:
 
-- Nothing past New Tristram has been tried: later quests, dungeons, bosses, other acts.
-- Picking up and equipping items, the inventory and skill menus, and dying and
-  respawning were not checked.
+- Every act played through to the end, each act's bosses, Greater Rifts, and the
+  Necromancer and other DLC content have not been checked one by one. Please open
+  an issue if something breaks.
 - Hero names come from `D3_HERO_NAME` (or "Hero"): there is no on-screen keyboard.
 - The first run draws nothing until shaders are translated (see Setup).
 - Online features are absent by design: network calls behave like a console with
   nothing attached, and console system dialogs do nothing.
+- Only macOS on Apple silicon so far.
 
 See the [roadmap](docs/ROADMAP.md) for the detail.
 
@@ -44,12 +49,16 @@ Captured on an Apple silicon Mac, drawn at 2560x1440 with the camera pulled back
 
 | | |
 |---|---|
+| ![The Survivors' Enclave, the Act V town](docs/images/act5-survivors-enclave.jpg) | ![The Adventure Mode world map with bounties](docs/images/adventure-map.jpg) |
+| Act V: the Survivors' Enclave | Adventure Mode: the world map and bounties |
+| ![Choosing a rift at the Nephalem obelisk](docs/images/rift-obelisk.jpg) | ![Fighting demons inside a Nephalem Rift](docs/images/nephalem-rift.jpg) |
+| The Nephalem obelisk | Inside a Nephalem Rift |
 | ![Fighting the risen dead at the gates of New Tristram](docs/images/combat-gates.jpg) | ![A ten-kill massacre bonus at the gates](docs/images/massacre.jpg) |
-| Fighting at the gates of New Tristram | Ten kills at once: the massacre bonus |
+| Act I: the gates of New Tristram | Ten kills at once: the massacre bonus |
 | ![New Tristram at night, beside the stash](docs/images/new-tristram.jpg) | ![Buying from Tashun the Miner](docs/images/merchant.jpg) |
 | New Tristram, beside the stash | A merchant's shop |
-| ![The stash holding the Signet Ring of the Blizzard](docs/images/stash-ring.jpg) | |
-| The stash, with the Signet Ring of the Blizzard | |
+| ![The stash holding the Signet Ring of the Blizzard](docs/images/stash-ring.jpg) | ![The death screen inside a rift](docs/images/died-in-rift.jpg) |
+| The stash, with the Signet Ring of the Blizzard | Dying in a rift |
 
 ## What is and is not in this repository
 
