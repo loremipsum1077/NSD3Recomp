@@ -26,6 +26,7 @@
 #include "X/Common/ActorCommonData.h"
 #include "X/Common/ActorInventory.h"
 #include "X/Common/Definitions/GameBalanceDefinition.h"
+#include "X/Common/Crafting/ItemCrafting.h"
 #include "X/Common/GameBalance.h"
 #include "X/Common/GlobalSNO.h"
 #include "X/Common/Items.h"
@@ -264,6 +265,25 @@ void AddRecipe(GameBalanceDefinition * pdefGB, int32 & nCount, void *& pTable)
                         r.tIngredients[k].unk_0c, r.tIngredients[k].unk_10);
             }
             fprintf(stderr, "\n");
+        }
+    }
+    // Test only: D3_CORRUPT_TEST_ACTION=N leaves recipe action N the only one that can match,
+    // and drops its ancient-rank checks, so a test needn't make an item ancient.
+    if (const char * szOnly = getenv("D3_CORRUPT_TEST_ACTION"))
+    {
+        for (TransmuteRecipe & r : *gRecipes)
+        {
+            for (int k = 0; k < r.nIngredientsCount; k++)
+            {
+                if ((int)r.eAction == atoi(szOnly))
+                {
+                    r.tIngredients[k].unk_0c = r.tIngredients[k].unk_10 = -1;
+                }
+                else if (k == 0)
+                {
+                    r.tIngredients[k].unk_10 = 99;  // no item has this ancient rank
+                }
+            }
         }
     }
     TransmuteRecipe tRecipe = ptRecipes[0];
@@ -649,6 +669,115 @@ void D3ModCorruptTooltip(const ActorCommonData & tItem, CRefString & sText)
 }
 } }
 
+CurrencyType CurrencyFromGBID(GBID gbid);  // X/Common/Items.cpp
+void SItemCrafting_TryTransmute(TransmuteItemsMessage * ptMsg, Player & tPlayer);  // X/Server/Crafting/SItemCrafting.cpp
+
+// D3_CORRUPT_TEST=transmute: give the hero the items in D3_CORRUPT_TEST_ITEMS and put them
+// all in the cube, as the cube screen would. Items are comma separated: an item name, "#gbid"
+// or "@n" for global GBID n; "*" in front makes it ancient, "=N" after gives N.
+void TestTransmute(Player & tPlayer, ActorCommonData & tHero)
+{
+    static int nStep = 0;
+    static std::vector<std::pair<GBID, bool> > arItems;
+    const char * szItems = getenv("D3_CORRUPT_TEST_ITEMS");
+    if (!szItems || nStep > 3)
+    {
+        return;
+    }
+    if (nStep == 0)
+    {
+        std::string sAll = szItems;
+        size_t nAt = 0;
+        while (nAt <= sAll.size())
+        {
+            size_t nEnd = sAll.find(',', nAt);
+            std::string sItem = sAll.substr(nAt, nEnd == std::string::npos ? std::string::npos : nEnd - nAt);
+            nAt = nEnd == std::string::npos ? sAll.size() + 1 : nEnd + 1;
+            bool bAncient = !sItem.empty() && sItem[0] == '*';
+            if (bAncient)
+            {
+                sItem.erase(0, 1);
+            }
+            int nCount = 1;
+            size_t nX = sItem.rfind('=');
+            if (nX != std::string::npos)
+            {
+                nCount = atoi(sItem.c_str() + nX + 1);
+                sItem.erase(nX);
+            }
+            GBID gbid = sItem[0] == '#' ? (GBID)atoi(sItem.c_str() + 1) : sItem[0] == '@' ? GlobalGBIDGet((GlobalGBID)atoi(sItem.c_str() + 1)) : StringToGBID(sItem.c_str());
+            std::string sName = GBIDToString(gbid, GB_ITEMS, FALSE).str();
+            for (int i = 0; i < nCount; i++)
+            {
+                ACDID idItem = ItemGiveToPlayer(tHero.id, sName.c_str(), NULL, NULL, NULL, NULL, NULL, NULL);
+                ActorCommonData * ptItem = ACDTryToGet(idItem);
+                if (ptItem && bAncient)
+                {
+                    ptItem->AttributesSetInt(ATTRIBUTE_ANCIENT_RANK, 1);
+                }
+            }
+            fprintf(stderr, "corrupt: test transmute: gave %d x %s%s (currency %d)\n", nCount, sName.c_str(), bAncient ? " (ancient)" : "", (int)CurrencyFromGBID(gbid));
+            arItems.push_back(std::make_pair(gbid, bAncient));
+        }
+        nStep = 1;
+        return;
+    }
+    if (nStep == 1)
+    {
+        TransmuteItemsMessage tMsg;
+        memset(&tMsg, 0, sizeof(tMsg));
+        for (const auto & tItem : arItems)
+        {
+            if (CurrencyFromGBID(tItem.first) != CURRENCY_INVALID)
+            {
+                tMsg.gbidCurrencies[tMsg.nCurrenciesCount++] = tItem.first;
+                continue;
+            }
+            ACDIterator tIt;
+            while (ActorCommonDataIterate(tIt))
+            {
+                ActorCommonData * ptACD = tIt.ptElement;
+                const InventoryLocation * ptAt = ptACD && ptACD->IsItem() ? Held(ptACD) : NULL;
+                if (ptAt && ptAt->idACDContainer == tHero.id && ptACD->hGB.gbid == tItem.first && (!tItem.second || ItemGetAncientRank(*ptACD) > 0))
+                {
+                    fprintf(stderr, "corrupt: test transmute: found %s in slot %d\n", GBIDToString(ptACD->hGB.gbid, GB_ITEMS, FALSE).str(), (int)ptAt->eSlot);
+                    tMsg.annItems[tMsg.nItemsCount++] = ANNFromACD(ptACD->id);
+                    break;
+                }
+            }
+        }
+        fprintf(stderr, "corrupt: test transmute: %d items and %d currencies in the cube\n", tMsg.nItemsCount, tMsg.nCurrenciesCount);
+        SItemCrafting_TryTransmute(&tMsg, tPlayer);
+        nStep = 2;
+        return;
+    }
+    // Next updates: what the hero holds now, and any portals in the hero's world.
+    nStep++;
+    ACDIterator tIt;
+    while (ActorCommonDataIterate(tIt))
+    {
+        ActorCommonData * ptACD = tIt.ptElement;
+        if (!ptACD)
+        {
+            continue;
+        }
+        const InventoryLocation * ptAt = ptACD->IsItem() ? Held(ptACD) : NULL;
+        if (ptAt && ptAt->idACDContainer == tHero.id && ptAt->eSlot == SLOT_PLAYER_BACKPACK && nStep == 3)
+        {
+            fprintf(stderr, "corrupt: test transmute: backpack %s x%d ancient %d primal %d\n", GBIDToString(ptACD->hGB.gbid, GB_ITEMS, FALSE).str(),
+                    (int)ptACD->GetStackCount(), (int)ItemGetAncientRank(*ptACD), (int)ptACD->AttributesGetInt(ATTRIBUTE_ITEM_WAS_PRIMALIZED));
+        }
+        if (!ptACD->IsItem() && ptACD->tLocation.tWorldLocation.idSWorld == tHero.tLocation.tWorldLocation.idSWorld && nStep == 3)
+        {
+            CRefString sName = SNOToString(ACTOR_SNO, ptACD->snoActor);
+            if (strstr(sName.str(), "Portal") || strstr(sName.str(), "portal"))
+            {
+                fprintf(stderr, "corrupt: test transmute: portal actor %s\n", sName.str());
+            }
+        }
+    }
+}
+
 void D3ModCorruptUpdate()
 {
     FindWorn();
@@ -669,6 +798,10 @@ void D3ModCorruptUpdate()
     else if (strcmp(TestMode(), "item") == 0)
     {
         TestItem(*ptPlayer, *ptHero);
+    }
+    else if (strcmp(TestMode(), "transmute") == 0)
+    {
+        TestTransmute(*ptPlayer, *ptHero);
     }
     else if (strcmp(TestMode(), "cube") == 0)
     {
