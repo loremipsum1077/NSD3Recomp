@@ -12,12 +12,20 @@
 //       paragon <n>        add n paragon levels (needs the level cap)
 //       item <name> [n]    give n (default 1) of the item with that GameBalance name
 //       gold <n>           add n gold
+//       cache <act> [n]    give n (default 1) Horadric Caches for act 1-5 at the game's
+//                          difficulty
+//       cube               unlock Kanai's Cube (saved with the account, like picking it
+//                          up in the Ruins of Sescheron)
 // The game answers in <save>/cheats/status.json and lists every item, with its in-game
 // name, in <save>/cheats/items.json for the page's item picker.
 #include "X/Common/ActorCommonData.h"
 #include "X/Common/Definitions/GameBalanceDefinition.h"
 #include "X/Common/Items.h"
 #include "X/Common/Player.h"
+#include "X/Common/Crafting/ItemCrafting.h"
+#include "X/Common/Crafting/ItemCraftingSwig.h"
+#include "X/Common/Game.h"
+#include "X/Server/Crafting/SItemCrafting.h"
 #include "X/Server/LuaScript/ScriptUtil.h"
 
 #include <stdio.h>
@@ -42,6 +50,7 @@ const int kHotkeyParagonLevels = 100;
 const int kMaxItemCount = 50;
 const long long kHotkeyGold = 10000000;
 const long long kMaxGold = 100000000000LL;
+const int kMaxCaches = 20;
 
 std::string Folder()
 {
@@ -207,6 +216,55 @@ void AddGold(ActorCommonData & tACD, long long nGold)
     Say("gold +" + std::to_string(nGold) + " -> " + std::to_string((long long)tACD.GetCurrencyAmount(CURRENCY_GOLD)));
 }
 
+// Horadric Caches are one item per act and difficulty: HoradricCacheA1, A1Hard,
+// A1Expert, A1Master, A1Torment (Torment 1) and A1Torment2 to A1Torment13. The data has
+// none past Torment 13, so Torment 14-16 get the Torment 13 cache.
+std::string CacheName(int nAct, int nHandicap)
+{
+    static const char * const kNamed[] = {"", "Hard", "Expert", "Master", "Torment"};
+    std::string name = "HoradricCacheA" + std::to_string(nAct);
+    if (nHandicap < 0)
+    {
+        nHandicap = 0;
+    }
+    if (nHandicap <= 4)
+    {
+        return name + kNamed[nHandicap];
+    }
+    return name + "Torment" + std::to_string(std::min(nHandicap - 3, 13));
+}
+
+void GiveCaches(ACDID idACDPlayer, int nAct, int nCount)
+{
+    if (nAct < 1 || nAct > 5)
+    {
+        Say("cache: the act must be 1 to 5");
+        return;
+    }
+    std::string name = CacheName(nAct, GameGetHandicapLevel());
+    int nGiven = 0;
+    for (int i = 0; i < nCount; i++)
+    {
+        if (ItemGiveToPlayer(idACDPlayer, name.c_str(), NULL, NULL, NULL, NULL, NULL, NULL) != ACDID_INVALID)
+        {
+            nGiven++;
+        }
+    }
+    Say("gave " + std::to_string(nGiven) + " x " + name + " (" + ItemGetDisplayName(StringToGBID(name.c_str())).str() + ")");
+}
+
+// The cube is the Horadrim crafter: it is unlocked once its crafter level is above 0.
+void UnlockCube(Player & tPlayer)
+{
+    if (GetCraftLevel(CRAFTER_TYPE_HORADRIM, tPlayer) > 0)
+    {
+        Say("Kanai's Cube is already unlocked");
+        return;
+    }
+    SCrafterUnlock(tPlayer, CRAFTER_TYPE_HORADRIM);
+    Say(GetCraftLevel(CRAFTER_TYPE_HORADRIM, tPlayer) > 0 ? "unlocked Kanai's Cube" : "could not unlock Kanai's Cube (it needs adventure mode)");
+}
+
 void GiveItem(ACDID idACDPlayer, const char * szName, int nCount)
 {
     int nGiven = 0;
@@ -227,13 +285,22 @@ void GiveItem(ACDID idACDPlayer, const char * szName, int nCount)
     }
 }
 
-void Run(const char * szLine, ACDID idACDPlayer, ActorCommonData & tACD)
+void Run(const char * szLine, Player & tPlayer, ACDID idACDPlayer, ActorCommonData & tACD)
 {
     char szWord[32] = {};
     char szName[128] = {};
     int nValue = 0;
     long long nGold = 0;
-    if (sscanf(szLine, "gold %lld", &nGold) == 1)
+    int nAct = 0;
+    if (strcmp(szLine, "cube") == 0)
+    {
+        UnlockCube(tPlayer);
+    }
+    else if (sscanf(szLine, "cache %d %d", &nAct, &nValue) >= 1)
+    {
+        GiveCaches(idACDPlayer, nAct, std::max(1, std::min(nValue ? nValue : 1, kMaxCaches)));
+    }
+    else if (sscanf(szLine, "gold %lld", &nGold) == 1)
     {
         AddGold(tACD, nGold);
     }
@@ -325,7 +392,7 @@ void D3ModCheatsUpdate()
                 while (fgets(szLine, sizeof szLine, file))
                 {
                     szLine[strcspn(szLine, "\r\n")] = 0;
-                    Run(szLine, ptPlayer->idPlayerACD, *ptACD);
+                    Run(szLine, *ptPlayer, ptPlayer->idPlayerACD, *ptACD);
                 }
                 fclose(file);
             }

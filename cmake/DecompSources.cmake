@@ -168,21 +168,16 @@ if(D3_MOD_MOUSE)
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/mouse.cpp")
 endif()
 
+# Mods that use the shared hooks (src/mods/hooks.cpp) add their name to this list.
+set(D3_SHARED_HOOKS)
+
 # D3_MOD_VENDOR=1 puts Deckard Cain back in New Tristram as a vendor of custom legendary
 # gems, each with an extra power that fires every so many kills (src/mods/vendor.cpp).
 # Heroes holding those gems need the mod on to load.
 set(D3_MOD_VENDOR "" CACHE STRING "Mod: Deckard Cain sells custom gems in New Tristram; 1 to turn on, empty for off")
 if(D3_MOD_VENDOR)
     message(STATUS "Mod: Cain's custom gems")
-    d3_patch_source("X/Server/SPlayer.cpp"
-        --replace "    ServerUpdateWasCalled(ptServerPlayerGlobals->tPlayerUpdateData)$<SEMICOLON>"
-                  "    ServerUpdateWasCalled(ptServerPlayerGlobals->tPlayerUpdateData)$<SEMICOLON> { void D3ModVendorUpdate()$<SEMICOLON> D3ModVendorUpdate()$<SEMICOLON> }")
-    d3_patch_source("X/Common/Definitions/GameBalanceDefinition.cpp"
-        --replace "        GBHeader * ptHeader = (GBHeader *)((uint8 *)pTable + i * nSize)$<SEMICOLON>"
-                  "        if (i == 0) { void D3ModVendorExtendItems(GameBalanceDefinition *, int32 &, void *&)$<SEMICOLON> D3ModVendorExtendItems(pdefGB, nCount, pTable)$<SEMICOLON> } GBHeader * ptHeader = (GBHeader *)((uint8 *)pTable + i * nSize)$<SEMICOLON>")
-    d3_patch_source("X/Common/Definitions/StringListDefinition.cpp"
-        --replace "static LPCSTR sStringListFetchInternal(const SNO snoStringList, const CHAR * szLabel, BOOL & fFound) {"
-                  "LPCSTR D3ModVendorString(SNO, LPCSTR)$<SEMICOLON> static LPCSTR sStringListFetchInternal(const SNO snoStringList, const CHAR * szLabel, BOOL & fFound) { if (LPCSTR szMod = D3ModVendorString(snoStringList, szLabel)) { fFound = TRUE$<SEMICOLON> return szMod$<SEMICOLON> }")
+    list(APPEND D3_SHARED_HOOKS VENDOR)  # update, item table, strings (see "shared hooks")
     d3_patch_source("X/Common/NPC.cpp"
         --replace "    return ActorDefinitionGetTagMapValueInt(TAG_ACTOR_NPC_TRADE, tACD.snoActor)$<SEMICOLON>"
                   "    { BOOL D3ModVendorIsVendor(const ActorCommonData &)$<SEMICOLON> if (D3ModVendorIsVendor(tACD)) return TRUE$<SEMICOLON> } return ActorDefinitionGetTagMapValueInt(TAG_ACTOR_NPC_TRADE, tACD.snoActor)$<SEMICOLON>")
@@ -199,6 +194,50 @@ if(D3_MOD_VENDOR)
     if(_owner GREATER -1)
         set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/vendor.cpp" PROPERTIES COMPILE_DEFINITIONS D3_VENDOR_UPGRADE_HAS_OWNER=1)
     endif()
+endif()
+
+# D3_MOD_CORRUPT=1 adds a "Corrupt" recipe to Kanai's Cube (src/mods/corrupt.cpp): a
+# legendary item comes out carrying a random boss's skill, which it casts now and then
+# when the hero hits something. The corruption is saved as an affix, so heroes holding
+# corrupted items need the mod on to load.
+set(D3_MOD_CORRUPT "" CACHE STRING "Mod: Kanai's Cube corrupts items with boss skills; 1 to turn on, empty for off")
+if(D3_MOD_CORRUPT)
+    message(STATUS "Mod: Kanai's Cube corruption")
+    list(APPEND D3_SHARED_HOOKS CORRUPT)  # update, affix and recipe tables, strings
+    # The new recipe's action (40; the game's run to 18) is handled before the switch.
+    d3_patch_source("X/Server/Crafting/SItemCrafting.cpp"
+        --replace "    eFailureError = GAMEERROR_NONE$<SEMICOLON>"
+                  "    eFailureError = GAMEERROR_NONE$<SEMICOLON> if (eAction == 40) { BOOL D3ModCorruptItem(Player &, const ACDID *, int32, ACDID &, ACDID &, GameError &)$<SEMICOLON> ACDID idKeep = ACDID_INVALID, idNew = ACDID_INVALID$<SEMICOLON> if (!D3ModCorruptItem(tPlayer, aridACDItems.data(), nItemsCount, idKeep, idNew, eFailureError)) return FALSE$<SEMICOLON> tResultsMessage.annItem = ANNFromACD(idNew)$<SEMICOLON> sTransmuteConsumeItems(tPlayer, tTransmuteInventoryFinal, idKeep)$<SEMICOLON> return TRUE$<SEMICOLON> }")
+    # Every hit that can proc (the same place the game rolls its own on-hit effects).
+    d3_patch_source("X/Server/Powers/PowerAPI.cpp"
+        --replace "                sPowerAPI_CheckForOnHitProcs(*ptPower, *ptACDMainActor, tACDTarget, tPowerDamage.eKnockBack, tPayload.flProcScalar, flDamageDone, flHitPointDamage, &tPayload, NULL, tPowerDamage.bCriticalHit)$<SEMICOLON>"
+                  "                sPowerAPI_CheckForOnHitProcs(*ptPower, *ptACDMainActor, tACDTarget, tPowerDamage.eKnockBack, tPayload.flProcScalar, flDamageDone, flHitPointDamage, &tPayload, NULL, tPowerDamage.bCriticalHit)$<SEMICOLON> { void D3ModCorruptOnHit(ActorCommonData &, ActorCommonData &, float, SNO)$<SEMICOLON> D3ModCorruptOnHit(*ptACDMainActor, tACDTarget, tPayload.flProcScalar, ptPower->snoPower)$<SEMICOLON> }")
+    # Item tooltips (console): a line for the corruption, after the item's properties.
+    # (Patch text is one line: CMake drops newlines in a custom command's arguments.)
+    d3_patch_source("X/Client/UserInterface/Console/UIConsoleInventoryViewUtilities.cpp"
+        --replace "        sTextSections[nCurrentSection] += sAffixes$<SEMICOLON>"
+                  "        sTextSections[nCurrentSection] += sAffixes$<SEMICOLON> { void D3ModCorruptTooltip(const ActorCommonData &, CRefString &)$<SEMICOLON> D3ModCorruptTooltip(*ptACDItem, sTextSections[nCurrentSection])$<SEMICOLON> }")
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/corrupt.cpp")
+endif()
+
+# Shared hooks: decomp files that more than one mod needs are patched once here, to
+# call src/mods/hooks.cpp, which calls each mod in D3_SHARED_HOOKS.
+if(D3_SHARED_HOOKS)
+    d3_patch_source("X/Server/SPlayer.cpp"
+        --replace "    ServerUpdateWasCalled(ptServerPlayerGlobals->tPlayerUpdateData)$<SEMICOLON>"
+                  "    ServerUpdateWasCalled(ptServerPlayerGlobals->tPlayerUpdateData)$<SEMICOLON> { void D3ModServerUpdate()$<SEMICOLON> D3ModServerUpdate()$<SEMICOLON> }")
+    d3_patch_source("X/Common/Definitions/GameBalanceDefinition.cpp"
+        --replace "        GBHeader * ptHeader = (GBHeader *)((uint8 *)pTable + i * nSize)$<SEMICOLON>"
+                  "        if (i == 0) { void D3ModExtendGameBalance(GameBalanceDefinition *, int32 &, void *&)$<SEMICOLON> D3ModExtendGameBalance(pdefGB, nCount, pTable)$<SEMICOLON> } GBHeader * ptHeader = (GBHeader *)((uint8 *)pTable + i * nSize)$<SEMICOLON>")
+    d3_patch_source("X/Common/Definitions/StringListDefinition.cpp"
+        --replace "static LPCSTR sStringListFetchInternal(const SNO snoStringList, const CHAR * szLabel, BOOL & fFound) {"
+                  "LPCSTR D3ModString(SNO, LPCSTR)$<SEMICOLON> static LPCSTR sStringListFetchInternal(const SNO snoStringList, const CHAR * szLabel, BOOL & fFound) { if (LPCSTR szMod = D3ModString(snoStringList, szLabel)) { fFound = TRUE$<SEMICOLON> return szMod$<SEMICOLON> }")
+    set(_hook_defs)
+    foreach(_mod IN LISTS D3_SHARED_HOOKS)
+        list(APPEND _hook_defs "D3_HOOK_${_mod}=1")
+    endforeach()
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/hooks.cpp")
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/hooks.cpp" PROPERTIES COMPILE_DEFINITIONS "${_hook_defs}")
 endif()
 
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})

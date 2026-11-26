@@ -210,13 +210,15 @@ it offers are listed in `config/mods.json`.
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
 - `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70,
   F2 adds 100 paragon levels and F3 adds 10,000,000 gold. While the game runs, the Mods
-  page's Cheats panel can do the same, add any amount of gold, and give any item, found
-  by its in-game name. Everything goes
+  page's Cheats panel can do the same, add any amount of gold, give any item, found
+  by its in-game name, unlock Kanai's Cube, and give Horadric Caches from any act (for
+  the game's current difficulty). Everything goes
   through the game's own level-up and item code (`src/mods/cheats.cpp`), so it is
   saved with the hero like anything earned. The page and the game exchange small
   files in `<save folder>/cheats/`; if you start the game yourself with a different
   `D3_SAVE_DIR`, write commands to that folder's `cheats/commands.txt` instead
-  (`level 70`, `paragon 100`, `gold 1000000`, `item Unique_Helm_002_p1`). Turn it off
+  (`level 70`, `paragon 100`, `gold 1000000`, `item Unique_Helm_002_p1`, `cube`,
+  `cache 3 5` for five act III caches). Turn it off
   with `-DD3_MOD_CHEATS=`.
 - `-DD3_MOD_MOUSE=1`: a mouse or trackpad alongside the controller. The Switch's menus
   only follow the controller, so the pointer drives them the same way: pointing at a
@@ -234,6 +236,15 @@ it offers are listed in `config/mods.json`.
   Shard: Speed every 10). The gems are added to the game's item table as it loads, so
   they are saved with the hero; a hero holding one needs this mod on to load. Add gems
   in the table at the top of `src/mods/vendor.cpp`. Turn it off with `-DD3_MOD_VENDOR=`.
+- `-DD3_MOD_CORRUPT=1`: Kanai's Cube gains a last page, Corrupt Legendary: 1 legendary
+  item, 25 Death's Breath, 5 Forgotten Souls and 1 Corrupted Angel Flesh. The item gains
+  a hidden affix holding one boss skill, picked at random from 27 (Diablo, Belial,
+  Azmodan, Zoltun Kulle, Izual, Maghda, the Skeleton King, Siegebreaker, Malthael,
+  Urzael, the Spider Queen and Adria), and the tooltip names it. While it is worn, each
+  hit has a chance (15%, scaled by the skill's proc coefficient; at most once every 1.5
+  seconds per item) to cast that skill from the hero. Corrupting the item again rerolls
+  the skill. A hero holding a corrupted item needs this mod on to load. The skills are
+  listed at the top of `src/mods/corrupt.cpp`. Turn it off with `-DD3_MOD_CORRUPT=`.
 
 ## Measuring progress
 

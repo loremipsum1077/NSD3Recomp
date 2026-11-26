@@ -98,7 +98,7 @@ def cheats_status():
 
 
 # What the page may ask the game to do (src/mods/cheats.cpp reads the same lines).
-CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10})$")
+CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10}|cube|cache [1-5]( ([1-9]|1[0-9]|20))?)$")
 
 
 def current_values():
@@ -209,6 +209,12 @@ PAGE = r"""<!doctype html>
   <button id="addgold">Add gold</button>
 </div>
 <div class="row">
+  <button data-cheat="cube">Unlock Kanai's Cube</button>
+  <input type="text" inputmode="numeric" id="caches" value="1" aria-label="Number of caches" style="width:50px">
+  <span>Horadric Caches from act</span>
+  <button data-act="1">I</button><button data-act="2">II</button><button data-act="3">III</button><button data-act="4">IV</button><button data-act="5">V</button>
+</div>
+<div class="row">
   <input type="search" id="itemsearch" placeholder="Find an item: name or type" aria-label="Find an item" style="flex:1;min-width:220px">
   <select id="rarity" aria-label="Rarity"><option value="">All items</option><option value="legendary">Legendary</option><option value="set">Set</option><option value="legset" selected>Legendary and set</option></select>
   <label><input type="checkbox" id="current" checked> Hide old versions</label>
@@ -299,6 +305,7 @@ $("cheats").addEventListener("click", e => {
   else if (b.id === "addparagon") cheat(`paragon ${parseInt($("paragon").value, 10) || 0}`);
   else if (b.id === "addgold") cheat(`gold ${parseInt($("gold").value, 10) || 0}`);
   else if (b.dataset.item) cheat(`item ${b.dataset.item}`);
+  else if (b.dataset.act) cheat(`cache ${b.dataset.act} ${Math.min(20, Math.max(1, parseInt($("caches").value, 10) || 1))}`);
 });
 ["itemsearch", "rarity", "current"].forEach(id => $(id).addEventListener("input", drawItems));
 function sync() {
