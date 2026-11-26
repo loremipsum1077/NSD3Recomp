@@ -312,6 +312,210 @@ if(D3_MOD_CHALLENGE)
         "D3_MOD_CHALLENGE_DIR=\"${D3_GAME_DIR}/rift_data\";D3_MOD_CHALLENGE_PICK=\"${D3_MOD_CHALLENGE}\"")
 endif()
 
+# D3_MOD_QOL: quality-of-life tweaks for offline play, comma-separated:
+#   InstantPortal  Town Portal skips its 3-second channel;
+#   InstantIdentify  identifying an item, and the Book of Cain, take no time;
+#   InstantCraft   the blacksmith, the Mystic and Kanai's Cube skip their wait;
+#   FreeCube       Kanai's Cube recipes keep their materials and gold (you still need
+#                  them to start; the item being changed is still used up);
+#   GemUpgrade     legendary gem upgrades at the Urshi always succeed;
+#   GemMax         one Urshi upgrade takes a legendary gem straight to rank 150;
+#   AnySocket      any gem fits any socket, legendary gems included;
+#   AnySlot        armour and jewellery go in any armour or jewellery slot;
+#   NoUniqueEquip  wear two of a unique-equipped legendary, such as a ring;
+#   AutoPickup     walking over a legendary or set item picks it up.
+set(D3_MOD_QOL "" CACHE STRING "Mod: quality-of-life tweaks (InstantPortal, InstantIdentify, InstantCraft, FreeCube, GemUpgrade, GemMax, AnySocket, AnySlot, NoUniqueEquip, AutoPickup; comma-separated); empty for off")
+if(D3_MOD_QOL)
+    set(_ui "X/Client/UserInterface/Console")
+    set(_crafting "X/Server/Crafting/SItemCrafting.cpp")
+    string(REPLACE "," ";" _options "${D3_MOD_QOL}")
+    foreach(_option IN LISTS _options)
+        if(_option STREQUAL "InstantPortal")
+            # The channel is a timer on the Hearth power; 0 ticks fires on the next update.
+            d3_patch_source("X/Server/Powers/SpellEffect.cpp"
+                --replace "    int32 uTicks = Math::FloatRoundToInt(flTime * 60.0f)$<SEMICOLON>"
+                          "    int32 uTicks = 0$<SEMICOLON> (void)flTime$<SEMICOLON>")
+        elseif(_option STREQUAL "InstantIdentify")
+            # Single items: the client's progress bar (1, not 0: it divides by it). The
+            # Book of Cain: identify at once, then stop the power on the next update.
+            d3_patch_source("${_ui}/UIConsoleInventoryView.cpp"
+                --replace "const uint32 UIInventoryView::IDENTIFYING_DURATION = 150$<SEMICOLON>"
+                          "const uint32 UIInventoryView::IDENTIFYING_DURATION = 1$<SEMICOLON>")
+            d3_patch_source("${_ui}/UIConsoleJewelUpgrade.cpp"
+                --replace "static const uint32 IDENTIFYING_DURATION = 150$<SEMICOLON>"
+                          "static const uint32 IDENTIFYING_DURATION = 1$<SEMICOLON>")
+            d3_patch_source("X/Server/Powers/SpellEffect.cpp"
+                --replace "    PowerSetStoredInt(ptPower, \"idRopeLeft\", -1)$<SEMICOLON>"
+                          "    PowerSetStoredInt(ptPower, \"idRopeLeft\", -1)$<SEMICOLON> sSpellEffect_IdentifyAll(idPower, NULL)$<SEMICOLON> PowerTriggerAddTimerTrigger(idPower, 0, [](const PowerID id, void *) { PowerForceStop(id, TRUE)$<SEMICOLON> }, NULL)$<SEMICOLON>")
+        elseif(_option STREQUAL "InstantCraft")
+            # All client-side waits; the server crafts as soon as it is asked.
+            d3_patch_source("${_ui}/UIConsoleBlacksmith.cpp"
+                --replace "const uint32 PlayerBlacksmithScreen::CRAFTING_DURATION = 150$<SEMICOLON>"
+                          "const uint32 PlayerBlacksmithScreen::CRAFTING_DURATION = 0$<SEMICOLON>")
+            d3_patch_source("${_ui}/UIConsoleEnchantView.cpp"
+                --replace "static const uint32 REPLACEMENT_LIST_REVEAL_DURATION = 120$<SEMICOLON>"
+                          "static const uint32 REPLACEMENT_LIST_REVEAL_DURATION = 1$<SEMICOLON>")
+            d3_patch_source("${_ui}/UIConsoleTransmute.cpp"
+                --replace "static const uint32 FX_DURATION = 120$<SEMICOLON>" "static const uint32 FX_DURATION = 2$<SEMICOLON>"
+                --replace "static const uint32 FX_UBER_DURATION = 240$<SEMICOLON>" "static const uint32 FX_UBER_DURATION = 2$<SEMICOLON>"
+                --replace "static const uint32 FX_COVERAGE_TIME = 60$<SEMICOLON>" "static const uint32 FX_COVERAGE_TIME = 1$<SEMICOLON>"
+                --replace "static const uint32 FX_UBER_COVERAGE_TIME = 180$<SEMICOLON>" "static const uint32 FX_UBER_COVERAGE_TIME = 1$<SEMICOLON>")
+        elseif(_option STREQUAL "FreeCube")
+            # 2.7.7's materials (and gold) are currencies; items given to a recipe are
+            # still removed, or the cube would copy the item it changes.
+            d3_patch_source("${_crafting}"
+                --replace "                ptACDPlayer->ModifyCurrencyAmount(-nDeleteCount, eCurrency, GMR_CUBE_RECIPE, FALSE)$<SEMICOLON>"
+                          "                (void)nDeleteCount$<SEMICOLON>")
+        elseif(_option STREQUAL "GemUpgrade")
+            if(NOT D3_MOD_QOL MATCHES "GemMax")
+                d3_patch_source("${_crafting}"
+                    --replace "            nUpgradeRanks = (flRandChance <= flUpgradeChance) ? 1 : 0$<SEMICOLON>"
+                              "            nUpgradeRanks = 1$<SEMICOLON> (void)flRandChance$<SEMICOLON>")
+            endif()
+            # The Urshi shows 100%, from the same function the server uses.
+            d3_patch_source("X/Common/Crafting/ItemCrafting.cpp"
+                --replace "    if (nRiftLevel < 0 || nJewelRank >= 150)"
+                          "    if (nRiftLevel >= 0 && nJewelRank < 150) { return 1.0f$<SEMICOLON> } else")
+        elseif(_option STREQUAL "GemMax")
+            # SItemUpgradeJewel adds each rank's stats and unlocks rank 25's effect.
+            d3_patch_source("${_crafting}"
+                --replace "            nUpgradeRanks = (flRandChance <= flUpgradeChance) ? 1 : 0$<SEMICOLON>"
+                          "            nUpgradeRanks = Math::Max(150 - tACDItem.AttributesGetInt(ATTRIBUTE_JEWEL_RANK), 0)$<SEMICOLON> (void)flRandChance$<SEMICOLON>")
+        elseif(_option STREQUAL "AnySocket")
+            # Any gem in any socket. A normal gem whose effects table has no row for the
+            # item gives no bonus there, instead of stopping the game.
+            d3_patch_source("X/Common/Items.cpp"
+                --replace "    if (ItemIsJewel(tACDItemToSocket))"
+                        "    fFound = TRUE$<SEMICOLON> if (ItemIsJewel(tACDItemToSocket))"
+                --replace "BOOL ItemRemoveSocketedItemAttributes(ActorCommonData & tACDItemToSocket, const ActorCommonData & tACDItemSocketedInto)"
+                        "static BOOL sD3ModGemHasEffect(GBID gbidGem, GBHandle hgbInto) { GBHandleList lstEffects(GBGetHandlePool())$<SEMICOLON> GBEnumerate(GB_SOCKETED_EFFECTS, lstEffects)$<SEMICOLON> BOOL bFound = FALSE$<SEMICOLON> POS pos = lstEffects.GetHeadPosition()$<SEMICOLON> while (pos && !bFound) { const GBHandle & hGB = lstEffects.GetNext(pos)$<SEMICOLON> const GameBalanceDefinition * pdefGB$<SEMICOLON> SocketedEffectsTableEntry * ptEffectDef = (SocketedEffectsTableEntry *)GBLockR(hGB, pdefGB, TRUE)$<SEMICOLON> bFound = ptEffectDef->gbidItemBeingSocketed == gbidGem && (ptEffectDef->gbidItemTypeSocketedInto == StringToGBID(\"All\") || ItemIsOfType(hgbInto, ptEffectDef->gbidItemTypeSocketedInto))$<SEMICOLON> GBUnlockR(pdefGB)$<SEMICOLON> } return bFound$<SEMICOLON> } static BOOL sD3ModRemoveSocketed(ActorCommonData &, const ActorCommonData &)$<SEMICOLON> BOOL ItemRemoveSocketedItemAttributes(ActorCommonData & a, const ActorCommonData & b) { if (ItemIsGem(a.hGB.gbid) && !ItemIsJewel(a.hGB.gbid) && !sD3ModGemHasEffect(a.hGB.gbid, b.hGB)) { return TRUE$<SEMICOLON> } return sD3ModRemoveSocketed(a, b)$<SEMICOLON> } static BOOL sD3ModRemoveSocketed(ActorCommonData & tACDItemToSocket, const ActorCommonData & tACDItemSocketedInto)"
+                --replace "BOOL ItemAddSocketedItemAttributes(ActorCommonData & tACDItemToSocket, const ActorCommonData & tACDItemSocketedInto)"
+                        "static BOOL sD3ModAddSocketed(ActorCommonData &, const ActorCommonData &)$<SEMICOLON> BOOL ItemAddSocketedItemAttributes(ActorCommonData & a, const ActorCommonData & b) { if (ItemIsGem(a.hGB.gbid) && !ItemIsJewel(a.hGB.gbid) && !sD3ModGemHasEffect(a.hGB.gbid, b.hGB)) { return TRUE$<SEMICOLON> } return sD3ModAddSocketed(a, b)$<SEMICOLON> } static BOOL sD3ModAddSocketed(ActorCommonData & tACDItemToSocket, const ActorCommonData & tACDItemSocketedInto)")
+        elseif(_option STREQUAL "AnySlot")
+            # Armour and jewellery in any armour or jewellery slot (not the hands).
+            d3_patch_source("X/Common/ActorInventory.cpp"
+                --replace "    if (!ItemIsAllowedInSlot(tInvLoc.eSlot, pItemTypeDef))"
+                        "    if (!ItemIsAllowedInSlot(tInvLoc.eSlot, pItemTypeDef) && !(tInvLoc.eSlot >= SLOT_PLAYER_BODYSLOT_START && tInvLoc.eSlot < SLOT_PLAYER_BODYSLOT_END && tInvLoc.eSlot != SLOT_PLAYER_RIGHT_HAND && tInvLoc.eSlot != SLOT_PLAYER_LEFT_HAND && pItemTypeDef->eBodySlot1 >= SLOT_PLAYER_BODYSLOT_START && pItemTypeDef->eBodySlot1 < SLOT_PLAYER_BODYSLOT_END && pItemTypeDef->eBodySlot1 != SLOT_PLAYER_RIGHT_HAND && pItemTypeDef->eBodySlot1 != SLOT_PLAYER_LEFT_HAND))")
+            d3_patch_source("${_ui}/UIConsoleInventoryFilters.cpp"
+                --replace "    if (!ACDInventoryItemAllowedInThisSlotType(ptACDItem->hGB.gbid, eSlot)) return FALSE$<SEMICOLON>"
+                        "    if (!ACDInventoryItemAllowedInThisSlotType(ptACDItem->hGB.gbid, eSlot) && !(eSlot >= SLOT_PLAYER_BODYSLOT_START && eSlot < SLOT_PLAYER_BODYSLOT_END && eSlot != SLOT_PLAYER_RIGHT_HAND && eSlot != SLOT_PLAYER_LEFT_HAND && [&]() { for (int32 s = SLOT_PLAYER_BODYSLOT_START$<SEMICOLON> s < SLOT_PLAYER_BODYSLOT_END$<SEMICOLON> s++) { if (s != SLOT_PLAYER_RIGHT_HAND && s != SLOT_PLAYER_LEFT_HAND && ACDInventoryItemAllowedInThisSlotType(ptACDItem->hGB.gbid, (InventorySlotType)s)) { return true$<SEMICOLON> } } return false$<SEMICOLON> }())) return FALSE$<SEMICOLON>")
+        elseif(_option STREQUAL "NoUniqueEquip")
+            # Wear more than one of a unique-equipped legendary, such as two of a ring.
+            d3_patch_source("X/Common/ActorInventory.cpp"
+                --replace "    if (ItemIsUniqueEquipped(tACDItem))"
+                        "    if (FALSE && ItemIsUniqueEquipped(tACDItem))"
+                --replace "        if (ItemIsUniqueEquipped(gbidItem))"
+                        "        if (FALSE && ItemIsUniqueEquipped(gbidItem))"
+                --replace "                (gbidLinkedPowerOutter != GBID_NONE || gbidLinkedPowerInner != GBID_NONE))"
+                        "                FALSE)")
+        elseif(_option STREQUAL "AutoPickup")
+            # Walking over legendary and set items picks them up, like gold. Items the hero
+            # drops are marked so they stay on the ground.
+            d3_patch_source("X/Common/ActorCommonData.cpp"
+                --replace "            ItemIsAutoPickup(*ptACDItem) &&"
+                        "            (ItemIsAutoPickup(*ptACDItem) || (!ptACDItem->AttributesGetInt(ATTRIBUTE_NO_AUTO_PICKUP) && (ItemIsLegendary(ptACDItem->hGB.gbid) || ItemIsSetItem(ptACDItem->hGB.gbid)))) &&")
+            d3_patch_source("X/Common/ActorInventory.cpp"
+                --replace "        if (ItemIsAutoPickup(tACDItem))"
+                        "        if (ItemIsAutoPickup(tACDItem) || ItemIsLegendary(tACDItem.hGB.gbid) || ItemIsSetItem(tACDItem.hGB.gbid))")
+        else()
+            message(FATAL_ERROR "D3_MOD_QOL: unknown option '${_option}' (InstantPortal, InstantIdentify, InstantCraft, FreeCube, GemUpgrade, GemMax, AnySocket, AnySlot, NoUniqueEquip, AutoPickup)")
+        endif()
+    endforeach()
+    message(STATUS "Mod: quality of life ${D3_MOD_QOL}")
+endif()
+
+# D3_MOD_ANCIENTS changes how legendary and set items roll ancient. All of the game's
+# rolls (drops, Kadala, crafting, the cube) go through LootRollForAncientLegendary:
+#   NoPrimals  ancients as normal, never primal ancient;
+#   None       no ancients (so no primals either);
+#   Ancient    every level-70 legendary and set item is ancient;
+#   Primal     every level-70 legendary and set item is primal ancient.
+set(D3_MOD_ANCIENTS "" CACHE STRING "Mod: ancient rolls (NoPrimals, None, Ancient, Primal); empty: the game's own")
+if(D3_MOD_ANCIENTS)
+    set(_loot "X/Server/Loot/Loot.cpp")
+    if(D3_MOD_ANCIENTS STREQUAL "NoPrimals")
+        d3_patch_source("${_loot}"
+            --replace "        if (idACDLooter != ACDID_INVALID && !tSpecifier.tLooteeParams.bDisablePrimalAncientDrops)"
+                      "        if (false && idACDLooter != ACDID_INVALID && !tSpecifier.tLooteeParams.bDisablePrimalAncientDrops)"
+            --replace "    if (GameIsSeasonal() && tSpecifier.tLooteeParams.nTieredLootRunLevel > 0 && NephalemRiftManager::RiftPlayerCount() == 1)"
+                      "    if (false && GameIsSeasonal() && tSpecifier.tLooteeParams.nTieredLootRunLevel > 0 && NephalemRiftManager::RiftPlayerCount() == 1)")
+    elseif(D3_MOD_ANCIENTS STREQUAL "None")
+        d3_patch_source("${_loot}"
+            --replace "    if (tSpecifier.tLooteeParams.bDisableAncientDrops)"
+                      "    if (true || tSpecifier.tLooteeParams.bDisableAncientDrops)")
+    elseif(D3_MOD_ANCIENTS MATCHES "^(Ancient|Primal)$")
+        if(D3_MOD_ANCIENTS STREQUAL "Ancient")
+            set(_rank ANCIENT_RANK_ANCIENT)
+        else()
+            set(_rank ANCIENT_RANK_PRIMAL_ANCIENT)
+        endif()
+        # After the level-70 and legendary checks, before the ethereal and chance rolls.
+        d3_patch_source("${_loot}"
+            --replace "    if (sub_710050e910(tSpecifier.hGBItem.gbid))"
+                      "    if (ItemIsEquippableByPlayerOrHireling(tSpecifier.hGBItem.gbid) || sub_710050e910(tSpecifier.hGBItem.gbid)) { tSpecifier.eAncientRank = ${_rank}$<SEMICOLON> return$<SEMICOLON> } if (sub_710050e910(tSpecifier.hGBItem.gbid))")
+    else()
+        message(FATAL_ERROR "D3_MOD_ANCIENTS must be NoPrimals, None, Ancient or Primal, got '${D3_MOD_ANCIENTS}'")
+    endif()
+    message(STATUS "Mod: ancients ${D3_MOD_ANCIENTS}")
+endif()
+
+# D3_MOD_ITEM_LEVEL=70 makes monsters, chests and other world drops roll as if the area
+# were that level (1 to 70): which items can drop, their stats and their level. Kadala,
+# crafting and the cube keep their own levels.
+set(D3_MOD_ITEM_LEVEL "" CACHE STRING "Mod: the level world drops roll at, 1 to 70 (empty: the area's level)")
+if(D3_MOD_ITEM_LEVEL)
+    if(NOT D3_MOD_ITEM_LEVEL MATCHES "^[0-9]+$" OR D3_MOD_ITEM_LEVEL LESS 1 OR D3_MOD_ITEM_LEVEL GREATER 70)
+        message(FATAL_ERROR "D3_MOD_ITEM_LEVEL must be a level from 1 to 70, got '${D3_MOD_ITEM_LEVEL}'")
+    endif()
+    message(STATUS "Mod: world drops roll at level ${D3_MOD_ITEM_LEVEL}")
+    d3_patch_source("X/Server/Loot/Loot.cpp"
+        --replace "    if (tLooteeParams.nLevel <= 0)"
+                  "    tLooteeParams.nLevel = ${D3_MOD_ITEM_LEVEL}$<SEMICOLON> if (tLooteeParams.nLevel <= 0)"
+        # The game raises legendaries rolled at 61 to 63 to 64; a chosen level stays.
+        --replace "            if (tLootee.tLooteeParams.nLevel >= 61 && tLootee.tLooteeParams.nLevel <= 63)"
+                  "            if (false && tLootee.tLooteeParams.nLevel >= 61 && tLootee.tLooteeParams.nLevel <= 63)"
+        --replace "        if (tLooteeParams.nLevel >= 61 && tLooteeParams.nLevel <= 63)"
+                  "        if (false && tLooteeParams.nLevel >= 61 && tLooteeParams.nLevel <= 63)")
+endif()
+
+# D3_MOD_LOOT loosens the drop rules, comma-separated:
+#   NoTormentGate      items marked Torment-only drop on every difficulty;
+#   NoRestrictions     items kept for later acts, rifts, hardcore heroes or season unlocks
+#                      drop anywhere;
+#   KadalaLegendaries  every Kadala purchase is a legendary or set item.
+set(D3_MOD_LOOT "" CACHE STRING "Mod: drop rules (NoTormentGate, NoRestrictions, KadalaLegendaries; comma-separated); empty for off")
+if(D3_MOD_LOOT)
+    set(_loot "X/Server/Loot/Loot.cpp")
+    string(REPLACE "," ";" _options "${D3_MOD_LOOT}")
+    foreach(_option IN LISTS _options)
+        if(_option STREQUAL "NoTormentGate")
+            d3_patch_source("${_loot}"
+                --replace "    if (!bDisableTormentCheck && (tItem.dwFlags & (1 << ITEM_TORMENT_ONLY_BIT)))"
+                          "    if (false && !bDisableTormentCheck && (tItem.dwFlags & (1 << ITEM_TORMENT_ONLY_BIT)))")
+        elseif(_option STREQUAL "NoRestrictions")
+            d3_patch_source("${_loot}"
+                --replace "    if (tItem.eMinAct != ACT_INVALID && eCurrentAct != ACT_INVALID && tItem.eMinAct > eCurrentAct)"
+                          "    if (false && tItem.eMinAct != ACT_INVALID && eCurrentAct != ACT_INVALID && tItem.eMinAct > eCurrentAct)"
+                --replace "    if (tItem.dwFlags & (1 << ITEM_TIERED_LOOT_RUN_ONLY_BIT))"
+                          "    if (false && (tItem.dwFlags & (1 << ITEM_TIERED_LOOT_RUN_ONLY_BIT)))"
+                --replace "    if (!bIgnoreSeason && !sub_7100897970(tItem.gbid, ACDTryToGet(idACDLooter)))"
+                          "    if (false && !bIgnoreSeason && !sub_7100897970(tItem.gbid, ACDTryToGet(idACDLooter)))"
+                --replace "    BOOL bHardcore = FALSE$<SEMICOLON>" "    BOOL bHardcore = TRUE$<SEMICOLON>")
+        elseif(_option STREQUAL "KadalaLegendaries")
+            # Only Kadala's purchases set bIgnoreClassLegendaryDropWeight. Her treasure
+            # classes may pick one entry or roll each; both rolls are covered.
+            d3_patch_source("${_loot}"
+                --replace "                            float flChance = flNaturalChance$<SEMICOLON>"
+                          "                            float flChance = tLootee.tLooteeParams.bIgnoreClassLegendaryDropWeight ? 1.0f : flNaturalChance$<SEMICOLON>"
+                --replace "    BOOL bIsLegendary = sLootModifierIsLegendary(tLootDropModifier)$<SEMICOLON>"
+                          "    BOOL bIsLegendary = sLootModifierIsLegendary(tLootDropModifier)$<SEMICOLON> if (bIsLegendary && tLootee.tLooteeParams.bIgnoreClassLegendaryDropWeight) { flChance = 1.0f$<SEMICOLON> }")
+        else()
+            message(FATAL_ERROR "D3_MOD_LOOT: unknown option '${_option}' (NoTormentGate, NoRestrictions, KadalaLegendaries)")
+        endif()
+    endforeach()
+    message(STATUS "Mod: loot ${D3_MOD_LOOT}")
+endif()
+
 # Shared hooks: decomp files that more than one mod needs are patched once here, to
 # call src/mods/hooks.cpp, which calls each mod in D3_SHARED_HOOKS.
 if(D3_SHARED_HOOKS)

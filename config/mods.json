@@ -29,6 +29,14 @@
     "pattern": "^[0-9]{1,2}(\\.[0-9]{1,3})?$"
   },
   {
+    "id": "D3_MOD_FPS",
+    "title": "Frame-rate counter",
+    "description": "Show frames per second in the window's top-left corner, with the time each frame takes and how much of it went to the game's own work (CPU) and to drawing (GPU). It is also printed every ten seconds. Starting the game with D3_FPS=0 or 1 hides or shows it whatever this says.",
+    "type": "toggle",
+    "default": "1",
+    "pattern": "^1$"
+  },
+  {
     "id": "D3_MOD_SEASON",
     "title": "Seasons (offline)",
     "description": "Make a season active without Blizzard's servers, so the Season Journey and seasonal heroes are available. The game's data holds 12 sets of seasonal content that repeat (season 13 is the same as 1), so 1 to 12 already cover every Season Journey; 14 to 37 also pick that season's theme when Season theme below is set to the chosen season. Leaderboards and other online parts of seasons stay unavailable.",
@@ -196,6 +204,84 @@
       "Always challengerift_00.dat",
       "Always challengerift_01.dat",
       "Always challengerift_02.dat"
+    ]
+  },
+  {
+    "id": "D3_MOD_QOL",
+    "title": "Quality of life",
+    "description": "Small changes for playing alone offline. Instant portal and identify skip the Town Portal channel, the wait when identifying an item and the Book of Cain's reading. Instant crafting skips the blacksmith's, the Mystic's and Kanai's Cube's waits. A free Cube still needs the materials to start a recipe but keeps them, and its gold; the item a recipe changes is still used up. Gem upgrades always succeed at the Urshi, or one upgrade takes a gem to rank 150. Any socket takes any gem, legendary gems included (a normal gem gives no bonus where the game has none for it). Any slot puts armour and jewellery in any armour or jewellery slot, so a ring can go on the head; weapons and off-hands stay in the hands. Unique-equipped legendaries, such as some rings, can be worn twice. Auto-pickup picks up legendary and set items when the hero walks over them, like gold.",
+    "type": "multi",
+    "default": "InstantPortal,InstantIdentify,InstantCraft",
+    "pattern": "^(InstantPortal|InstantIdentify|InstantCraft|FreeCube|GemUpgrade|GemMax|AnySocket|AnySlot|NoUniqueEquip|AutoPickup)(,(InstantPortal|InstantIdentify|InstantCraft|FreeCube|GemUpgrade|GemMax|AnySocket|AnySlot|NoUniqueEquip|AutoPickup))*$",
+    "choices": [
+      "InstantPortal",
+      "InstantIdentify",
+      "InstantCraft",
+      "FreeCube",
+      "GemUpgrade",
+      "GemMax",
+      "AnySocket",
+      "AnySlot",
+      "NoUniqueEquip",
+      "AutoPickup"
+    ],
+    "labels": [
+      "Instant Town Portal",
+      "Instant identify and Book of Cain",
+      "Instant crafting, enchanting and Cube",
+      "Cube recipes keep their materials",
+      "Gem upgrades always succeed",
+      "Gem upgrades go straight to rank 150",
+      "Any gem in any socket",
+      "Armour and jewellery in any slot",
+      "Wear two of a unique-equipped legendary",
+      "Auto-pickup legendary and set items"
+    ]
+  },
+  {
+    "id": "D3_MOD_ANCIENTS",
+    "title": "Ancient items",
+    "description": "Change how legendary and set items roll ancient, for drops, Kadala, crafting and Kanai's Cube alike. Only level-70 items can be ancient, as in the game. No primals keeps ancients but never rolls primal ancient; none turns ancients off; ancient or primal makes every level-70 legendary and set item that.",
+    "type": "choice",
+    "default": "NoPrimals",
+    "pattern": "^(NoPrimals|None|Ancient|Primal)$",
+    "choices": [
+      "NoPrimals",
+      "None",
+      "Ancient",
+      "Primal"
+    ],
+    "labels": [
+      "No primal ancients",
+      "No ancients",
+      "Every item ancient",
+      "Every item primal ancient"
+    ]
+  },
+  {
+    "id": "D3_MOD_ITEM_LEVEL",
+    "title": "Drop level",
+    "description": "Make monsters, chests and other world drops roll as if the area were this level, from 1 to 70: which items can drop, their stats and their level. 70 gives level-70 items from the start, which a low-level hero cannot wear yet. Kadala, crafting and the Cube keep their own levels.",
+    "type": "number",
+    "default": "70",
+    "pattern": "^([1-9]|[1-6][0-9]|70)$"
+  },
+  {
+    "id": "D3_MOD_LOOT",
+    "title": "Loot rules",
+    "description": "Loosen the rules on what can drop. No Torment gate lets items the game keeps for Torment difficulties drop on every difficulty. No restrictions lets items kept for later acts, for rifts, for hardcore heroes or for a season's unlocks drop anywhere. Kadala legendaries makes every Kadala purchase a legendary or set item.",
+    "type": "multi",
+    "default": "NoTormentGate",
+    "pattern": "^(NoTormentGate|NoRestrictions|KadalaLegendaries)(,(NoTormentGate|NoRestrictions|KadalaLegendaries))*$",
+    "choices": [
+      "NoTormentGate",
+      "NoRestrictions",
+      "KadalaLegendaries"
+    ],
+    "labels": [
+      "No Torment gate",
+      "No drop restrictions",
+      "Kadala always gives a legendary"
     ]
   },
   {

@@ -260,6 +260,40 @@ it offers are listed in `config/mods.json`.
   unavailable. Challenge Rifts open once a hero on the account has cleared a solo
   Greater Rift; the `rifts 70` cheat below does that. `src/mods/challenge.cpp`; turn it
   off with `-DD3_MOD_CHALLENGE=`.
+- `-DD3_MOD_QOL=InstantPortal,InstantIdentify,InstantCraft`: quality-of-life changes for
+  offline play, comma-separated:
+  - `InstantPortal`: Town Portal skips its 3-second channel.
+  - `InstantIdentify`: identifying an item, and reading the Book of Cain, take no time.
+  - `InstantCraft`: the blacksmith, the Mystic and Kanai's Cube skip their waits.
+  - `FreeCube`: Cube recipes keep their materials and gold. You still need them to
+    start the recipe, and the item a recipe changes is still used up.
+  - `GemUpgrade`: legendary gem upgrades at the Urshi always succeed.
+  - `GemMax`: one upgrade takes a legendary gem straight to rank 150.
+  - `AnySocket`: any gem fits any socket, legendary gems included. A normal gem gives
+    no bonus where the game's table has none for it.
+  - `AnySlot`: armour and jewellery go in any armour or jewellery slot. Weapons and
+    off-hands stay in the hands. A hero saved wearing items this way needs the mod
+    left on to load them there.
+  - `NoUniqueEquip`: wear two of a unique-equipped legendary, such as a ring.
+  - `AutoPickup`: walking over a legendary or set item picks it up, like gold. Items
+    the hero drops stay on the ground.
+- `-DD3_MOD_ANCIENTS=NoPrimals`: how legendary and set items roll ancient, for drops,
+  Kadala, crafting and the Cube. `NoPrimals` keeps ancients but no primal ancients;
+  `None` turns ancients off; `Ancient` or `Primal` makes every level-70 legendary and
+  set item that. Only level-70 items can be ancient, as in the game.
+- `-DD3_MOD_ITEM_LEVEL=70`: world drops (monsters, chests and so on) roll as if the area
+  were this level, 1 to 70. Kadala, crafting and the Cube keep their own levels.
+- `-DD3_MOD_LOOT=NoTormentGate`: looser drop rules, comma-separated:
+  - `NoTormentGate`: items marked Torment-only drop on every difficulty.
+  - `NoRestrictions`: items kept for later acts, for rifts, for hardcore heroes or for
+    a season's unlocks drop anywhere.
+  - `KadalaLegendaries`: every Kadala purchase is a legendary or set item.
+- `-DD3_MOD_FPS=1`: a frame-rate counter in the window's top-left corner: frames per
+  second, the time per frame, and how much of it the game's own work (CPU) and drawing
+  (GPU) took, averaged over half a second and printed every ten seconds. `D3_FPS=0` or `1`
+  when starting the game hides or shows it whatever the build says, and
+  `D3_SCREENSHOT_WINDOW=1` makes `D3_SCREENSHOT` save the window, counter included.
+  Turn it off with `-DD3_MOD_FPS=`.
 - `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
 - `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70,

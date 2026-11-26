@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 namespace {
 
@@ -1794,10 +1795,99 @@ const char * kPresentSource =
     "    float2 p = float2((id << 1) & 2, id & 2);\n"
     "    V v; v.position = float4(p * 2.0 - 1.0, 0.0, 1.0); v.uv = float2(p.x, 1.0 - p.y); return v;\n"
     "}\n"
-    "fragment float4 present_fragment(V v [[stage_in]], texture2d<float> t [[texture(0)]]) {\n"
+    // The frame-rate counter (FpsOverlay below): a line of 3x5-pixel characters drawn
+    // over a darkened box in the window's top-left corner. Each glyph is 15 bits, its top
+    // row first; the order is "0123456789. FPSGUMC".
+    "struct Overlay { uint count; uint scale; uint code[40]; };\n"
+    "constant uint kGlyphs[19] = { 31599, 11415, 29671, 29647, 23497, 31183, 31215, 29257, 31727, 31695,\n"
+    "                              2, 0, 31140, 31716, 31183, 31087, 23407, 24557, 31015 };\n"
+    "fragment float4 present_fragment(V v [[stage_in]], texture2d<float> t [[texture(0)]],\n"
+    "                                 constant Overlay & o [[buffer(0)]]) {\n"
     "    constexpr sampler s(filter::linear);\n"
-    "    return float4(t.sample(s, v.uv).rgb, 1.0);\n"
+    "    float3 c = t.sample(s, v.uv).rgb;\n"
+    "    if (o.count > 0) {\n"
+    "        uint2 p = uint2(v.position.xy);\n"
+    "        uint pad = 2 * o.scale;\n"
+    "        if (p.x < 2 * pad + o.count * 4 * o.scale && p.y < 2 * pad + 5 * o.scale) {\n"
+    "            c *= 0.3;\n"
+    "            if (p.x >= pad && p.y >= pad) {\n"
+    "                uint gx = (p.x - pad) / o.scale, gy = (p.y - pad) / o.scale;\n"
+    "                uint ch = gx / 4, col = gx % 4;\n"
+    "                if (ch < o.count && col < 3 && gy < 5 && ((kGlyphs[o.code[ch]] >> (14 - (gy * 3 + col))) & 1))\n"
+    "                    c = float3(1.0, 0.85, 0.3);\n"
+    "            }\n"
+    "        }\n"
+    "    }\n"
+    "    return float4(c, 1.0);\n"
     "}\n";
+
+// D3_MOD_FPS (or D3_FPS=1 when starting the game; D3_FPS=0 hides it): frames per second,
+// the time per frame, and how much of it the game's own work (CPU) and the GPU took,
+// averaged over half a second. Also printed every ten seconds.
+#ifndef D3_MOD_FPS
+#define D3_MOD_FPS 0
+#endif
+struct FpsOverlay
+{
+    uint32_t count;
+    uint32_t scale;
+    uint32_t code[40];
+};
+
+double NowSeconds()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+
+bool FpsShown()
+{
+    static int shown = -1;
+    if (shown < 0)
+    {
+        const char * env = getenv("D3_FPS");
+        shown = env ? atoi(env) != 0 : D3_MOD_FPS;
+    }
+    return shown != 0;
+}
+
+// Times one frame: called as the frame is presented (cpu: seconds since the last frame's
+// present returned; gpu: the last frame's GPU time). Fills the overlay's text.
+void FpsUpdate(FpsOverlay & overlay, double cpu, double gpu, unsigned height)
+{
+    static double windowStart = 0, frames = 0, cpuSum = 0, gpuSum = 0, lastLog = 0;
+    static char text[41] = "";
+    double now = NowSeconds();
+    if (windowStart == 0)
+    {
+        windowStart = lastLog = now;
+    }
+    frames++;
+    cpuSum += cpu;
+    gpuSum += gpu;
+    if (now - windowStart >= 0.5)
+    {
+        double span = now - windowStart;
+        snprintf(text, sizeof text, "%.0f FPS %.1f MS CPU %.1f GPU %.1f", frames / span, 1000 * span / frames,
+                 1000 * cpuSum / frames, 1000 * gpuSum / frames);
+        if (now - lastLog >= 10)
+        {
+            fprintf(stderr, "fps: %s\n", text);
+            lastLog = now;
+        }
+        windowStart = now;
+        frames = cpuSum = gpuSum = 0;
+    }
+    static const char kOrder[] = "0123456789. FPSGUMC";
+    overlay.count = 0;
+    for (const char * c = text; *c && overlay.count < 40; c++)
+    {
+        const char * at = strchr(kOrder, *c);
+        overlay.code[overlay.count++] = at ? static_cast<uint32_t>(at - kOrder) : 11;
+    }
+    overlay.scale = height / 300 > 2 ? height / 300 : 2;
+}
 
 void SaveScreenshot(id<MTLTexture> texture, const char * path)
 {
@@ -1879,6 +1969,8 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
 {
     (void)queue;
     d3_nvn_called("nvnQueuePresentTexture");
+    static double lastPresentDone = 0, lastGpu = 0;
+    double presentStart = NowSeconds();
     @autoreleasepool
     {
         FlushClears();
@@ -1922,6 +2014,13 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
             id<MTLRenderCommandEncoder> pass = [Commands() renderCommandEncoderWithDescriptor:d];
             [pass setRenderPipelineState:g_presentPipeline];
             [pass setFragmentTexture:source atIndex:0];
+            FpsOverlay overlay = {};
+            if (FpsShown())
+            {
+                FpsUpdate(overlay, lastPresentDone ? presentStart - lastPresentDone : 0, lastGpu,
+                          static_cast<unsigned>(drawable.texture.height));
+            }
+            [pass setFragmentBytes:&overlay length:sizeof overlay atIndex:0];
             [pass drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
             [pass endEncoding];
             [Commands() presentDrawable:drawable];
@@ -1935,13 +2034,17 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
             // on the Switch presenting holds it back long enough for that to be safe.
             [done commit];
             [done waitUntilCompleted];
+            lastGpu = done.GPUEndTime > done.GPUStartTime ? done.GPUEndTime - done.GPUStartTime : 0;
             if (getenv("D3_SCREENSHOT") && source)
             {
-                MaybeScreenshot(source);
+                // D3_SCREENSHOT_WINDOW=1 saves what the window shows (with the frame-rate
+                // counter) instead of the game's own image.
+                MaybeScreenshot(getenv("D3_SCREENSHOT_WINDOW") && drawable ? drawable.texture : source);
             }
         }
     }
     d3_present_pace();
+    lastPresentDone = NowSeconds();
 }
 
 }  // namespace
@@ -2057,7 +2160,7 @@ extern "C" int d3_nvn_metal_start(void)
         g_layer = (__bridge CAMetalLayer *)layer;
         g_layer.device = g_device;
         g_layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-        g_layer.framebufferOnly = YES;
+        g_layer.framebufferOnly = getenv("D3_SCREENSHOT_WINDOW") ? NO : YES;  // the window's image can be read back
         g_layer.displaySyncEnabled = NO;       // pacing is done by the driver, as on the Switch
 
         NSError * error = nil;

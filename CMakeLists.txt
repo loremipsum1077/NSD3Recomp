@@ -67,6 +67,13 @@ set(D3_SHADER_CACHE "${PROJECT_SOURCE_DIR}/cache/shaders-2.7.7" CACHE PATH "Fold
 target_compile_definitions(d3_platform PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_DEFAULT_SAVE_DIR="${D3_SAVE_DIR}"
     D3_DEFAULT_SHADER_CACHE="${D3_SHADER_CACHE}")
 set_target_properties(d3_platform PROPERTIES CXX_STANDARD 17)
+# D3_MOD_FPS=1 shows a frame-rate counter in the window's corner (src/gfx/metal/nvn_metal.mm);
+# D3_FPS=1 or 0 when starting the game shows or hides it whatever the build says.
+set(D3_MOD_FPS "" CACHE STRING "Mod: frame-rate counter; 1 to turn on, empty for off")
+if(D3_MOD_FPS)
+    message(STATUS "Mod: frame-rate counter")
+    target_compile_definitions(d3_platform PRIVATE D3_MOD_FPS=1)
+endif()
 
 # Data that exists in the original program but that the decomp does not define yet,
 # written out as C from the player's own dump. The output is game content and stays
