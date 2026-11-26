@@ -9,8 +9,9 @@
 // runs is given them here.
 //
 // D3_MOD_THEME_KEYS is the comma-separated list of buff names (the part after
-// "CommunityBuff"), e.g. "ShadowClones,FourthKanaisCubeSlot". The buffs apply to every
-// hero, not only seasonal ones. In 2.7.7, Dark Alchemy (the Altar of Rites) and Nesting
+// "CommunityBuff"), e.g. "ShadowClones,FourthKanaisCubeSlot". The name "Season" stands for
+// the theme of season D3_MOD_THEME_SEASON (the season mod's number), from the table below.
+// The buffs apply to every hero, not only seasonal ones. In 2.7.7, Dark Alchemy (the Altar of Rites) and Nesting
 // Portals are always on while any community event runs, so they come with every theme.
 #include "X/Common/CommunityBuffs.h"
 #include "X/Client/Definitions/PreferencesDefinition.h"
@@ -26,6 +27,47 @@
 #ifndef D3_MOD_THEME_KEYS
 #define D3_MOD_THEME_KEYS ""
 #endif
+#ifndef D3_MOD_THEME_SEASON
+#define D3_MOD_THEME_SEASON 0
+#endif
+
+namespace {
+
+// Each themed season's buffs, as Blizzard's servers set them. Season 23's theme (followers
+// that fight like heroes) is built into 2.7.7 and has no buff. The list follows d3hack's
+// season map (github.com/god-jester/d3hack, source/program/config.cpp).
+const char * sSeasonTheme(int nSeason)
+{
+    switch (nSeason)
+    {
+    case 14: return "DoubleGoblins";                       // Season of Greed
+    case 15: return "DoubleBountyBags";                    // Boon of the Horadrim
+    case 16: return "RoyalGrandeur";                       // Season of Grandeur
+    case 17: return "LegacyOfNightmares";                  // Season of Nightmares
+    case 18: return "TriunesWill";                         // Season of the Triune
+    case 19: return "Pandemonium";                         // Season of Eternal Conflict
+    case 20: return "KanaiPowers";                         // Season of the Forbidden Archives
+    case 21: return "TrialsOfTempests";                    // Trials of the Tempests
+    case 22: return "ShadowClones,FourthKanaisCubeSlot";   // Shades of the Nephalem
+    case 24: return "EtherealItems";                       // Ethereal Memory
+    case 25: return "SoulShards";                          // The Lords of Hell
+    case 26: return "SwarmRifts";                          // Echoing Nightmare
+    case 27: return "SanctifiedItems";                     // Light's Calling
+    case 28: return "DarkAlchemy";                         // Rites of Sanctuary
+    case 29: return "NestingPortals";                      // Visions of Enmity
+    case 30: return "SoulShards";
+    case 31: return "KanaiPowers";
+    case 32: return "EtherealItems";
+    case 33: return "ShadowClones,FourthKanaisCubeSlot";
+    case 34: return "SanctifiedItems";
+    case 35: return "Pandemonium";
+    case 36: return "SoulShards";
+    case 37: return "KanaiPowers";
+    default: return "";
+    }
+}
+
+}  // namespace
 
 void SPlayerApplyPerkBuffs(ActorCommonData & tACDPlayer);  // X/Server/SPlayer.cpp
 
@@ -64,7 +106,14 @@ void D3ModThemeUpdate()
         size_t nEnd = sKeys.find(',', nAt);
         std::string sName = sKeys.substr(nAt, nEnd == std::string::npos ? std::string::npos : nEnd - nAt);
         nAt = nEnd == std::string::npos ? sKeys.size() : nEnd + 1;
-        if (!sName.empty())
+        if (sName == "Season")
+        {
+            // The season's buffs go round the loop as if they had been listed.
+            const char * szTheme = sSeasonTheme(D3_MOD_THEME_SEASON);
+            fprintf(stderr, "theme: season %d's theme is %s\n", D3_MOD_THEME_SEASON, *szTheme ? szTheme : "none");
+            sKeys += std::string(",") + szTheme;
+        }
+        else if (!sName.empty())
         {
             sConfig += "CommunityBuff" + sName + " \"1\"\n";
         }
@@ -88,6 +137,6 @@ void D3ModThemeUpdate()
             SPlayerApplyPerkBuffs(*ptACD);
         }
     }
-    fprintf(stderr, "theme: community buffs on: %s (event %s)\n", D3_MOD_THEME_KEYS,
+    fprintf(stderr, "theme: community buffs on: %s (event %s)\n", sKeys.c_str(),
             tBuffs.AnyActive() ? "active" : "inactive");
 }

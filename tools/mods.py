@@ -165,6 +165,9 @@ PAGE = r"""<!doctype html>
   .mod p { grid-column:2 / 4; margin:0; color:var(--dim); font-size:14px; }
   .mod select, .mod input[type=text] { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); width:150px; }
   .mod :disabled { opacity:.45; }
+  .mod .multi { display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:flex-end; max-width:420px; }
+  .mod .multi label { font-weight:400; display:flex; align-items:center; gap:6px; }
+  .mod .multi input[type=checkbox] { width:18px; height:18px; }
   .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:20px 0 12px; }
   button { font:inherit; font-weight:600; padding:10px 20px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
@@ -253,6 +256,11 @@ function field(m, value) {
   let input;
   if (m.type === "toggle") {
     input = "<span></span>";
+  } else if (m.type === "multi") {
+    // Several of the choices at once, sent as a comma-separated list.
+    const on = v.split(","), label = (c, i) => m.labels ? m.labels[i] : c;
+    input = `<span class="multi" data-v="${m.id}">` + m.choices.map((c, i) =>
+      `<label><input type="checkbox" value="${c}"${on.includes(c) ? " checked" : ""}> ${label(c, i)}</label>`).join("") + `</span>`;
   } else if (m.type === "choice") {
     const all = m.choices.includes(v) ? m.choices : m.choices.concat([v]);
     const label = c => (m.labels && m.choices.indexOf(c) >= 0) ? m.labels[m.choices.indexOf(c)] : c;
@@ -310,8 +318,15 @@ $("cheats").addEventListener("click", e => {
 });
 ["itemsearch", "rarity", "current"].forEach(id => $(id).addEventListener("input", drawItems));
 function sync() {
-  document.querySelectorAll("[data-c]").forEach(c => { const v = document.querySelector(`[data-v="${c.dataset.c}"]`); if (v) v.disabled = !c.checked; });
+  document.querySelectorAll("[data-c]").forEach(c => {
+    const v = document.querySelector(`[data-v="${c.dataset.c}"]`);
+    if (v && v.classList.contains("multi")) v.querySelectorAll("input").forEach(i => { i.disabled = !c.checked; });
+    else if (v) v.disabled = !c.checked;
+  });
 }
+// A field's value: a multi field's ticked choices, comma-separated.
+const fieldValue = v => v.classList.contains("multi")
+  ? [...v.querySelectorAll("input:checked")].map(i => i.value).join(",") : v.value.trim();
 async function poll() {
   let s;
   try { s = await (await fetch(`/state?t=${T}&from=${shown}`)).json(); }
@@ -343,7 +358,7 @@ async function poll() {
 $("build").addEventListener("click", async e => {
   e.preventDefault();
   const values = {};
-  document.querySelectorAll("[data-c]").forEach(c => { const v = document.querySelector(`[data-v="${c.dataset.c}"]`); values[c.dataset.c] = c.checked ? (v ? v.value.trim() : "1") : ""; });
+  document.querySelectorAll("[data-c]").forEach(c => { const v = document.querySelector(`[data-v="${c.dataset.c}"]`); values[c.dataset.c] = c.checked ? (v ? fieldValue(v) : "1") : ""; });
   const r = await (await fetch(`/build?t=${T}`, {method: "POST", body: JSON.stringify(values)})).json();
   if (r.error) { $("status").textContent = r.error; $("status").className = "bad"; }
 });

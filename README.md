@@ -223,19 +223,30 @@ it offers are listed in `config/mods.json`.
   normal distance from the hero. Turn it off with `-DD3_MOD_CAMERA_DISTANCE=`.
 - `-DD3_MOD_SEASON=1`: make that season number active without the online service,
   so the Season Journey and seasonal heroes are available. The game's data holds 12 sets
-  of seasonal content that repeat, so 1 to 12 are all the distinct choices. Leaderboards and the other
-  online parts of seasons stay unavailable. The number picks the Season Journey only;
-  a season's theme is the next mod. Turn it off with `-DD3_MOD_SEASON=`.
-- `-DD3_MOD_THEME=SoulShards`: turn on a season theme. In 2.7.7 the themes are
+  of seasonal content that repeat, so 1 to 12 already cover every Season Journey; 14 to 37
+  also give that season's theme with `-DD3_MOD_THEME=Season`. Leaderboards and the other
+  online parts of seasons stay unavailable. Turn it off with `-DD3_MOD_SEASON=`.
+- `-DD3_MOD_THEME=Season`: turn on a season theme. In 2.7.7 the themes are
   "community buffs" that Blizzard's servers switched on for a season, so offline none
-  start. The value is the buff names, comma-separated: `DoubleGoblins` (season 14),
+  start. `Season` takes the theme of the season `D3_MOD_SEASON` makes active, from a table
+  of seasons 14 to 37 in `src/mods/theme.cpp` (following
+  [d3hack](https://github.com/god-jester/d3hack)'s season map; season 23's theme is built
+  into 2.7.7). Otherwise the value is the buff names, comma-separated: `DoubleGoblins` (season 14),
   `DoubleBountyBags` (15), `RoyalGrandeur` (16), `LegacyOfNightmares` (17),
   `TriunesWill` (18), `Pandemonium` (19), `KanaiPowers` (20, 31), `TrialsOfTempests`
-  (21), `ShadowClones,FourthKanaisCubeSlot` (22), `EtherealItems` (24, 32), `SoulShards`
-  (25, 30), `SwarmRifts`, `SanctifiedItems` (27), `DarkAlchemy` (28) and `NestingPortals`
-  (29); the game also reads `DoubleBloodShards`, `DoubleRiftKeystones` and `ParagonCap`.
+  (21), `ShadowClones,FourthKanaisCubeSlot` (22, 33), `EtherealItems` (24, 32), `SoulShards`
+  (25, 30, 36), `SwarmRifts` (26), `SanctifiedItems` (27, 34), `DarkAlchemy` (28) and
+  `NestingPortals` (29); the game also reads `DoubleBloodShards`, `DoubleRiftKeystones` and
+  `ParagonCap`.
   The theme applies to every hero. With any theme on, the Altar of Rites and Visions of
   Enmity are on too, as in 2.7.7. Turn it off with `-DD3_MOD_THEME=`.
+- `-DD3_MOD_EVENTS=Anniversary`: events Blizzard's servers ran, comma-separated.
+  `Anniversary` opens the Darkening of Tristram (its portal is in New Tristram) and gives
+  the anniversary buff; without it the dungeon still opens every January, from the game's
+  own dates. `CowLevel` is the game's not-a-cow-level easter egg. `DoubleBloodShards` and
+  `DoubleRiftKeystones` double those rewards. The first two change the defaults of the
+  settings the servers would have sent; the doubles are community buffs, given as the
+  theme mod gives its own. `src/mods/events.cpp`; turn it off with `-DD3_MOD_EVENTS=`.
 - `-DD3_MOD_CHALLENGE=rotate`: Challenge Rifts offline. On the Switch the game
   downloaded each week's challenge as two files from Blizzard's servers:
   `challengerift_config.dat` (the challenge's number, times and orb multiplier) and

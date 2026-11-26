@@ -17,6 +17,9 @@ void D3ModCorruptUpdate();
 #if D3_HOOK_THEME
 void D3ModThemeUpdate();  // src/mods/theme.cpp
 #endif
+#if D3_HOOK_EVENTS
+void D3ModEventsUpdate();  // src/mods/events.cpp
+#endif
 
 // As each GameBalance file is loaded, before its rows are registered: rows may be added.
 void D3ModExtendGameBalance(GameBalanceDefinition * pdefGB, int32 & nCount, void *& pTable)
@@ -59,5 +62,8 @@ void D3ModServerUpdate()
 #endif
 #if D3_HOOK_THEME
     D3ModThemeUpdate();
+#endif
+#if D3_HOOK_EVENTS
+    D3ModEventsUpdate();
 #endif
 }
