@@ -1,8 +1,9 @@
 # NSD3Recomp
 
-A native port of **Diablo III 2.6.2 (Nintendo Switch)**, built by recompiling the
-decompiled source from [NSDiablo3Decomp](https://github.com/loremipsum1077/NSDiablo3Decomp)
-for desktop platforms. macOS on Apple silicon is the first target.
+A native port of **Diablo III 2.7.7 (Nintendo Switch)**, the game's last update, built
+by recompiling the decompiled source from
+[NSDiablo3Decomp](https://github.com/loremipsum1077/NSDiablo3Decomp) for desktop
+platforms. macOS on Apple silicon is the first target.
 
 > **Not affiliated with Blizzard Entertainment or Nintendo.** This is an unofficial
 > fan project, not endorsed by either company. Diablo is a trademark of Blizzard
@@ -10,7 +11,15 @@ for desktop platforms. macOS on Apple silicon is the first target.
 > contains no game data, game code or Nintendo SDK material. To use it you need
 > your own legally obtained copy of Diablo III: Eternal Collection for Nintendo Switch.
 
-**Status: the whole game should be playable, though not all of it has been verified.**
+## Branches
+
+- **`dev`**: 2.7.7, built from the decomp's `dev` branch. All work happens here.
+- **`2.6.2`**: builds the cartridge version 2.6.2 from the decomp's `2.6.2` branch. It is
+  kept as it is and changes only if 2.6.2 itself needs a fix.
+
+## Status
+
+**The whole game should be playable, though not all of it has been verified.**
 Every decomp source file compiles and links into one macOS executable that runs from
 your own game data. The campaign has been played from a cold start into Act V, and
 Adventure Mode works: the world map with bounties, Nephalem Rifts opened from the
@@ -24,7 +33,7 @@ does not work. Seen working, in play and in scripted runs on 2026-11-23:
   merchants and the stash.
 - Adventure Mode: bounties on the world map, the Nephalem obelisk and rifts.
 - Dying, and the resurrect choices that follow.
-- Saving: heroes and progress are written to `save/`, and the same hero loads back
+- Saving: heroes and progress are written to `save/2.7.7/`, and the same hero loads back
   in on the next start.
 - Sound, through a replacement for FMOD: in a three-minute run about 1,700 sounds
   were decoded, none failed, and up to 43 played at once.
@@ -95,20 +104,23 @@ you. You make it yourself from a copy you own:
 
 1. **Own the game.** Diablo III: Eternal Collection for Nintendo Switch (title ID
    `01001B300B9BE000`), on cartridge or from the eShop.
-2. **Have version 2.6.2.52309.** The title screen shows it in small print at the
-   bottom (`C2.6.2.52309`). Any other version, older or newer, will not match.
-   This is the version on the cartridge, with no updates installed. A copy that has
-   been updated to a later version will not match.
+2. **You need two dumps.** 2.7.7 ships no debug file, so the build also reads the one
+   in the cartridge version:
+   - the **cartridge version 2.6.2.52309**, with no updates installed. The title screen
+     shows it in small print at the bottom (`C2.6.2.52309`);
+   - the game **updated to 2.7.7** (`C2.7.7.92380`), dumped with the update applied.
 3. **Dump it from your own Switch.** This needs a console that can run homebrew and
    a dumping tool such as nxdumptool, which reads the installed game with your
    console's own keys. Follow that tool's documentation. This project does not
    provide keys, firmware or instructions for getting around the console's
    protections; do not download the game or keys from anywhere else.
-4. **Extract the program's ExeFS and RomFS** into `game/exefs/` and `game/romfs/`
-   here. Allow about 30 GB of free space while extracting.
-5. **Check them** from the decomp checkout:
+4. **Extract each program's ExeFS and RomFS**: 2.6.2's into `game/exefs/` and
+   `game/romfs/`, and 2.7.7's into `game/2.7.7/exefs/` and `game/2.7.7/romfs/`. Allow
+   about 30 GB of free space for each while extracting.
+5. **Check the 2.6.2 dump** from the decomp checkout:
    `python3 -B tools/verify_original_inputs.py --input-root ../NSD3Recomp/game`.
-   It reports exactly which file is missing or does not match.
+   It reports exactly which file is missing or does not match. The 2.7.7 program is
+   checked in the next section.
 
 `game/` is ignored by git. Keep the dump private: do not commit, upload or share it.
 
@@ -116,16 +128,22 @@ you. You make it yourself from a copy you own:
 
 1. Check out NSDiablo3Decomp next to this repository (`../NSDiablo3Decomp`), or point
    `D3_DECOMP_DIR` at it.
-2. Put your own dump of the game in `game/` (see [Getting the game files](#getting-the-game-files)):
-   the program in `game/exefs/` (`main`) and the whole RomFS in `game/romfs/`
-   (including `DiabloIIINX64r.nss`). The build reads both, and the game reads its
-   data from `game/romfs/` when it runs.
-3. Generate the decomp's private inputs (game Protobuf bindings and data tables)
-   from that dump, once, in the decomp checkout:
+2. Put your own dumps in `game/` and `game/2.7.7/` (see
+   [Getting the game files](#getting-the-game-files)). The build reads 2.7.7's program
+   and 2.6.2's debug file, and the game reads its data from `game/2.7.7/romfs/` when
+   it runs.
+3. Generate the decomp's private inputs (the 2.7.7 program as an ELF, game Protobuf
+   bindings and data tables) from those dumps, once, in the decomp checkout. These are
+   the steps in its README's
+   [Setting up for 2.7.7](https://github.com/loremipsum1077/NSDiablo3Decomp#setting-up-for-277):
 
 ```sh
 cd ../NSDiablo3Decomp
+python3 setup.py
+toolchain/nx-decomp-tools-binaries/macos/nx2elf ../NSD3Recomp/game/2.7.7/exefs/main --export-elf data/2.7.7/main.elf
+shasum -a 256 data/2.7.7/main.elf   # b462b3f68d0afc80eb2331b2b18c96a86046ef5a459bedc2439aa7959cfa13c5
 python3 tools/bootstrap_game_data.py ../NSD3Recomp/game --build-protoc
+python3 tools/bootstrap_protobuf.py
 cd ../NSD3Recomp
 ```
 
@@ -144,7 +162,7 @@ The first run draws nothing: the game's shaders have to be translated once.
 Run the program for half a minute, quit, then:
 
 ```sh
-python3 tools/shader_translate.py --cache cache/shaders
+python3 tools/shader_translate.py --cache cache/shaders-2.7.7
 ```
 
 and run it again. Repeat when a new area shows missing objects.
@@ -171,7 +189,8 @@ The same table is on the Mods page (`Mods.command`).
 Environment variables: `D3_HEADLESS=1` (no window), `D3_LANGUAGE=fr` (a Switch
 language code), `D3_PLAYER_NAME=...` (account nickname), `D3_HERO_NAME=...` (the
 answer to the game's name prompt), `D3_GAME_DIR`, `D3_SAVE_DIR` and
-`D3_SHADER_CACHE` (other folders than `game/`, `save/` and `cache/shaders/`),
+`D3_SHADER_CACHE` (other folders than `game/2.7.7/`, `save/2.7.7/` and
+`cache/shaders-2.7.7/`),
 `D3_NVN_TRACE=frames` or `all`,
 `D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds),
 `D3_MOUSE_SCRIPT="40:left:0.5,0.4 45:move:0.3,0.3 50:right:0.6,0.5@2"` (with the Mouse

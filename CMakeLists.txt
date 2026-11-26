@@ -23,11 +23,17 @@ add_compile_options(
     "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:SHELL:-isystem ${D3_LIBCXX_ROOT}/include/c++/v1>")
 
 include(cmake/Decomp.cmake)
+# This branch builds game version 2.7.7 (the decomp's dev branch); the 2.6.2 branches of
+# both repositories build 2.6.2. 2.7.7 ships no debug file, so symbol names and addresses
+# come from the decomp's data/2.7.7 folder and data sizes from the 2.6.2 debug file.
+# Where the game's data is read from by default. Never inside version control.
+set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game/2.7.7" CACHE PATH "Folder holding your own dump of the game, updated to 2.7.7")
+if(NOT EXISTS "${D3_DECOMP_ROOT}/data/2.7.7/functions.csv")
+    message(FATAL_ERROR "The decomp at ${D3_DECOMP_ROOT} has no data/2.7.7: this branch builds 2.7.7, "
+        "so check out the decomp's dev branch there (for 2.6.2, use the 2.6.2 branch of both repositories).")
+endif()
 # Target d3_decomp: the decomp's sources (game and middleware).
 include(cmake/DecompSources.cmake)
-
-# Where the game's data is read from by default. Never inside version control.
-set(D3_GAME_DIR "${PROJECT_SOURCE_DIR}/game" CACHE PATH "Folder holding the user's own game dump")
 
 # The host program is defined at the end of this file, once every part exists.
 
@@ -55,9 +61,9 @@ target_include_directories(d3_platform PRIVATE src)
 target_link_libraries(d3_platform PRIVATE SDL2::SDL2)
 set_source_files_properties(src/gfx/metal/nvn_metal.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 # Where saves go until milestone 7 settles it. Ignored by git.
-set(D3_SAVE_DIR "${PROJECT_SOURCE_DIR}/save" CACHE PATH "Folder for save data")
+set(D3_SAVE_DIR "${PROJECT_SOURCE_DIR}/save/2.7.7" CACHE PATH "Folder for save data")
 # Translated shaders, made from the player's own game data. Ignored by git.
-set(D3_SHADER_CACHE "${PROJECT_SOURCE_DIR}/cache/shaders" CACHE PATH "Folder for translated shaders")
+set(D3_SHADER_CACHE "${PROJECT_SOURCE_DIR}/cache/shaders-2.7.7" CACHE PATH "Folder for translated shaders")
 target_compile_definitions(d3_platform PRIVATE D3_DEFAULT_GAME_DIR="${D3_GAME_DIR}" D3_DEFAULT_SAVE_DIR="${D3_SAVE_DIR}"
     D3_DEFAULT_SHADER_CACHE="${D3_SHADER_CACHE}")
 set_target_properties(d3_platform PROPERTIES CXX_STANDARD 17)
@@ -66,10 +72,10 @@ set_target_properties(d3_platform PROPERTIES CXX_STANDARD 17)
 # written out as C from the player's own dump. The output is game content and stays
 # in the build directory.
 set(D3_EXTRACTED "${CMAKE_BINARY_DIR}/generated/extracted_data.c")
-# A game version without a debug file (2.7.7): symbol names and addresses from the
-# decomp's data/<version> folder, and data sizes from the 2.6.2 debug file where known.
-set(D3_SYMBOLS_CSV "" CACHE PATH "Decomp data/<version> folder to use instead of the dump's debug file")
-set(D3_SIZE_HINTS "" CACHE FILEPATH "Another version's DiabloIIINX64r.nss, for data sizes")
+# 2.7.7 has no debug file: symbol names and addresses from the decomp's data/2.7.7
+# folder, and data sizes from the 2.6.2 debug file (your cartridge dump in game/) where known.
+set(D3_SYMBOLS_CSV "${D3_DECOMP_ROOT}/data/2.7.7" CACHE PATH "Decomp data/<version> folder to use instead of the dump's debug file")
+set(D3_SIZE_HINTS "${PROJECT_SOURCE_DIR}/game/romfs/DiabloIIINX64r.nss" CACHE FILEPATH "The 2.6.2 DiabloIIINX64r.nss, for data sizes")
 set(_extract_args)
 if(D3_SYMBOLS_CSV)
     list(APPEND _extract_args --symbols-csv "${D3_SYMBOLS_CSV}")

@@ -10,9 +10,8 @@ commands you would type: `cmake -B build/<name> -D<option>=<value> ...` (or
 `cmake --preset macos ...` for a build directory not configured yet) and
 `cmake --build build/<name>`. The page stops this program when it is closed.
 
-Every configured build directory under build/ (one per game version, such as
-build/macos for 2.6.2 and build/macos-277 for 2.7.7) can be chosen on the page;
---build picks the one selected at start.
+Every configured build directory under build/ (such as build/macos) can be chosen
+on the page; --build picks the one selected at start.
 """
 import argparse
 import json
