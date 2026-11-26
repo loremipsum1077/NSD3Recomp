@@ -1871,6 +1871,10 @@ void MaybeScreenshot(id<MTLTexture> texture)
     }
 }
 
+// The size of the last image presented: the game's own pixel grid, which the window
+// shows stretched to fit. The Mouse mod maps window positions onto it.
+int g_presentWidth, g_presentHeight;
+
 void PresentTexture(void * queue, WindowDesc * window, int index)
 {
     (void)queue;
@@ -1903,6 +1907,11 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
             fputc('\n', stderr);
         }
         id<MTLTexture> source = index >= 0 && index < window->count ? Metal(window->textures[index]) : nil;
+        if (source)
+        {
+            g_presentWidth = static_cast<int>(source.width);
+            g_presentHeight = static_cast<int>(source.height);
+        }
         id<CAMetalDrawable> drawable = source ? [g_layer nextDrawable] : nil;
         if (drawable)
         {
@@ -1936,6 +1945,12 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
 }
 
 }  // namespace
+
+extern "C" void d3_present_size(int * width, int * height)
+{
+    *width = g_presentWidth;
+    *height = g_presentHeight;
+}
 
 extern "C" const d3_nvn_entry d3_nvn_metal_overrides[] = {
     {"nvnDeviceInitialize", (d3_nvn_function)DeviceInitialize},

@@ -57,5 +57,13 @@
     "type": "toggle",
     "default": "1",
     "pattern": "^1$"
+  },
+  {
+    "id": "D3_MOD_MOUSE",
+    "title": "Mouse",
+    "description": "Use a mouse or trackpad alongside the controller. In menus, point at an entry to select it and click to choose it; a dialog's Accept and Cancel can be clicked. In the game, hold the left button to walk toward the pointer and hold the right button to use your primary skill (A), which also talks, opens and picks up.",
+    "type": "toggle",
+    "default": "1",
+    "pattern": "^1$"
   }
 ]

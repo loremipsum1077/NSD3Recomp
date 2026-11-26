@@ -156,6 +156,18 @@ if(D3_MOD_CHEATS)
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/cheats.cpp")
 endif()
 
+# D3_MOD_MOUSE=1 lets the mouse play alongside the controller (src/mods/mouse.cpp): it
+# selects and presses menu entries and dialog buttons, and walks the hero toward the
+# pointer. Each input update first hands the window's mouse events to the mod.
+set(D3_MOD_MOUSE "" CACHE STRING "Mod: mouse input alongside the controller; 1 to turn on, empty for off")
+if(D3_MOD_MOUSE)
+    message(STATUS "Mod: mouse")
+    d3_patch_source("X/Client/Input/InputNX64.cpp"
+        --replace "    if ( sCSAIsActive() )"
+                  "    { void D3ModMouseUpdate()$<SEMICOLON> D3ModMouseUpdate()$<SEMICOLON> } if ( sCSAIsActive() )")
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/mouse.cpp")
+endif()
+
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
 get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
 foreach(_entry IN LISTS _patched_sources)

@@ -174,6 +174,9 @@ answer to the game's name prompt), `D3_GAME_DIR`, `D3_SAVE_DIR` and
 `D3_SHADER_CACHE` (other folders than `game/`, `save/` and `cache/shaders/`),
 `D3_NVN_TRACE=frames` or `all`,
 `D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds),
+`D3_MOUSE_SCRIPT="40:left:0.5,0.4 45:move:0.3,0.3 50:right:0.6,0.5@2"` (with the Mouse
+mod: click or move at a fraction of the window at given seconds, `@` holds that long;
+the real pointer is ignored), `D3_MOUSE_TRACE=1` (what each click hit),
 `D3_SCREENSHOT=file.png` with `D3_SCREENSHOT_FRAME=2500`, `D3_METAL_STATS=1`,
 `D3_FS_TRACE=1`, `D3_TEXTURE_LIST=1`, `D3_DRAW_LOG=<frame>` and `D3_DRAW_SWEEP=<frame>,<n>`
 (list a frame's draws; leave out a different slice of them each frame, to find the
@@ -214,6 +217,13 @@ it offers are listed in `config/mods.json`.
   `D3_SAVE_DIR`, write commands to that folder's `cheats/commands.txt` instead
   (`level 70`, `paragon 100`, `item Unique_Helm_002_p1`). Turn it off with
   `-DD3_MOD_CHEATS=`.
+- `-DD3_MOD_MOUSE=1`: a mouse or trackpad alongside the controller. The Switch's menus
+  only follow the controller, so the pointer drives them the same way: pointing at a
+  menu entry selects it, a left click chooses it (A), and a click on a dialog's
+  Accept or Cancel presses that button. In the game, holding the left button walks
+  toward the pointer (it tilts the left stick) and holding the right button holds A,
+  the primary skill, which also talks, opens and picks up. Other skills stay on the
+  keyboard or controller. `src/mods/mouse.cpp`; turn it off with `-DD3_MOD_MOUSE=`.
 
 ## Measuring progress
 

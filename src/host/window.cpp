@@ -4,6 +4,7 @@
 //   Space or Return = A, Escape = B, Q = Y, E = X, Tab = Plus, Backspace = Minus,
 //   1 = L, 2 = R, 3 = ZL, 4 = ZR.
 //   F1 and F2 are the Cheats mod's hotkeys (d3_hotkeys_take).
+// Mouse: queued for the Mouse mod (d3_mouse_take), which hands it to the game.
 // Game controllers map by position: the right-hand face button is always the
 // Switch's A, whatever letter is printed on it.
 #include "window.h"
@@ -14,6 +15,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <algorithm>
+#include <vector>
 
 namespace {
 
@@ -26,6 +30,100 @@ bool g_quit;
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 d3_pad_state g_state;
 int g_hotkeys;  // under g_lock
+
+const int kMouseQueue = 256;
+d3_mouse_event g_mouse[kMouseQueue];  // under g_lock
+int g_mouseCount;
+
+void QueueMouseAt(int type, int button, int wheel, float x, float y)
+{
+    d3_mouse_event e;
+    e.type = type;
+    e.button = button;
+    e.wheel = wheel;
+    e.x = x;
+    e.y = y;
+    pthread_mutex_lock(&g_lock);
+    if (g_mouseCount == kMouseQueue)
+    {
+        memmove(g_mouse, g_mouse + 1, sizeof g_mouse[0] * (kMouseQueue - 1));
+        g_mouseCount--;
+    }
+    g_mouse[g_mouseCount++] = e;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void QueueMouse(int type, int button, int wheel, int x, int y)
+{
+    if (getenv("D3_MOUSE_SCRIPT"))
+    {
+        return;  // a scripted run ignores the real pointer
+    }
+    int width = 1, height = 1;
+    if (g_window)
+    {
+        SDL_GetWindowSize(g_window, &width, &height);
+    }
+    QueueMouseAt(type, button, wheel, width > 0 ? static_cast<float>(x) / width : 0,
+                 height > 0 ? static_cast<float>(y) / height : 0);
+}
+
+// Scripted mouse, for testing without a person: D3_MOUSE_SCRIPT="40:left:0.5,0.4
+// 45:right:0.6,0.5@2 50:move:0.3,0.3" moves to the given fraction of the window at the
+// given number of seconds after the window opened and, for left/right/middle, presses
+// that button there and releases it a tenth of a second later ("@seconds" holds longer).
+void ScriptedMouse()
+{
+    struct Step { double at; int type, button; float x, y; };
+    static std::vector<Step> * steps;
+    static size_t next;
+    static Uint32 start = SDL_GetTicks();
+    if (!steps)
+    {
+        steps = new std::vector<Step>;
+        const char * script = getenv("D3_MOUSE_SCRIPT");
+        for (const char * p = script ? script : ""; *p;)
+        {
+            double at = 0, hold = 0.1;
+            char action[8] = {};
+            float x = 0, y = 0;
+            int used = 0, more = 0;
+            if (sscanf(p, " %lf:%7[a-z]:%f,%f%n", &at, action, &x, &y, &used) != 4)
+            {
+                break;
+            }
+            p += used;
+            if (sscanf(p, "@%lf%n", &hold, &more) == 1)
+            {
+                p += more;
+            }
+            int button = strcmp(action, "right") == 0 ? D3_MOUSE_RIGHT : strcmp(action, "middle") == 0 ? D3_MOUSE_MIDDLE : D3_MOUSE_LEFT;
+            steps->push_back({at, D3_MOUSE_MOVE, 0, x, y});
+            if (strcmp(action, "move") != 0)
+            {
+                steps->push_back({at, D3_MOUSE_DOWN, button, x, y});
+                steps->push_back({at + hold, D3_MOUSE_UP, button, x, y});
+            }
+        }
+        std::stable_sort(steps->begin(), steps->end(), [](const Step & a, const Step & b) { return a.at < b.at; });
+    }
+    double now = (SDL_GetTicks() - start) / 1000.0;
+    for (; next < steps->size() && (*steps)[next].at <= now; next++)
+    {
+        const Step & s = (*steps)[next];
+        QueueMouseAt(s.type, s.button, 0, s.x, s.y);
+    }
+}
+
+// d3_pad_tap holds a pad button down until this tick (0 for none); d3_mouse_stick tilts
+// the left stick (the Mouse mod walks this way).
+Uint32 g_tapUntil[64];
+int g_mouseStickX, g_mouseStickY;
+
+int MouseButtonOf(Uint8 sdlButton)
+{
+    return sdlButton == SDL_BUTTON_RIGHT ? D3_MOUSE_RIGHT : sdlButton == SDL_BUTTON_MIDDLE ? D3_MOUSE_MIDDLE : D3_MOUSE_LEFT;
+}
 
 struct KeyButton { SDL_Scancode key; int button; };
 const KeyButton kKeys[] = {
@@ -166,6 +264,18 @@ void Sample()
     }
 
     s.buttons |= ScriptedButtons();
+    ScriptedMouse();
+    pthread_mutex_lock(&g_lock);
+    for (int b = 0; b < 64; b++)
+    {
+        if (g_tapUntil[b] && SDL_TICKS_PASSED(g_tapUntil[b], SDL_GetTicks()) == SDL_FALSE)
+        {
+            s.buttons |= 1ull << b;
+        }
+    }
+    s.leftX = Clamp(s.leftX + g_mouseStickX);
+    s.leftY = Clamp(s.leftY + g_mouseStickY);
+    pthread_mutex_unlock(&g_lock);
     s.leftX = Clamp(s.leftX + g_scriptStickX);
     s.leftY = Clamp(s.leftY + g_scriptStickY);
 
@@ -246,6 +356,25 @@ int d3_window_pump(void)
                 pthread_mutex_unlock(&g_lock);
             }
             break;
+        case SDL_MOUSEMOTION:
+            QueueMouse(D3_MOUSE_MOVE, 0, 0, e.motion.x, e.motion.y);
+            break;
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+            if (e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT || e.button.button == SDL_BUTTON_MIDDLE)
+            {
+                QueueMouse(e.type == SDL_MOUSEBUTTONDOWN ? D3_MOUSE_DOWN : D3_MOUSE_UP, MouseButtonOf(e.button.button), 0,
+                           e.button.x, e.button.y);
+            }
+            break;
+        case SDL_MOUSEWHEEL:
+            if (e.wheel.y)
+            {
+                int x = 0, y = 0;
+                SDL_GetMouseState(&x, &y);
+                QueueMouse(D3_MOUSE_WHEEL, 0, e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -e.wheel.y : e.wheel.y, x, y);
+            }
+            break;
         case SDL_CONTROLLERDEVICEADDED:
             OpenFirstController();
             break;
@@ -261,6 +390,36 @@ int d3_window_pump(void)
     }
     Sample();
     return g_quit;
+}
+
+void d3_pad_tap(int button, int milliseconds)
+{
+    if (button < 0 || button >= 64)
+    {
+        return;
+    }
+    pthread_mutex_lock(&g_lock);
+    g_tapUntil[button] = SDL_GetTicks() + static_cast<Uint32>(milliseconds) | 1;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void d3_mouse_stick(int x, int y)
+{
+    pthread_mutex_lock(&g_lock);
+    g_mouseStickX = x;
+    g_mouseStickY = y;
+    pthread_mutex_unlock(&g_lock);
+}
+
+int d3_mouse_take(struct d3_mouse_event * out, int max)
+{
+    pthread_mutex_lock(&g_lock);
+    int count = g_mouseCount < max ? g_mouseCount : max;
+    memcpy(out, g_mouse, sizeof g_mouse[0] * count);
+    memmove(g_mouse, g_mouse + count, sizeof g_mouse[0] * (g_mouseCount - count));
+    g_mouseCount -= count;
+    pthread_mutex_unlock(&g_lock);
+    return count;
 }
 
 int d3_hotkeys_take(void)
