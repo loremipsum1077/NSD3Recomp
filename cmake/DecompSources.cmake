@@ -44,28 +44,44 @@ endif()
 # ---- mods: deliberate changes to the game, off by default ----
 # The decomp itself is never edited. A mod compiles a patched copy of one source
 # file, written to the build directory by tools/patch_source.py, in place of the
-# original (same position in the link order).
+# original (same position in the link order). Several mods may patch the same file:
+# d3_patch_source collects each file's replacements, applied in the order the mods
+# ask for them, and d3_apply_patches makes one patched copy per file.
 function(d3_patch_source relative)
     set(_original "${D3_DECOMP_ROOT}/src/${relative}")
-    set(_patched "${CMAKE_BINARY_DIR}/generated/mods/${relative}")
     list(FIND D3_DECOMP_SOURCES "${_original}" _at)
     if(_at EQUAL -1)
         message(FATAL_ERROR "mod: ${relative} is not among the decomp's sources")
     endif()
-    set(_replacements)
+    string(MAKE_C_IDENTIFIER "${relative}" _key)
+    get_property(_files GLOBAL PROPERTY D3_PATCH_FILES)
+    if(NOT relative IN_LIST _files)
+        set_property(GLOBAL APPEND PROPERTY D3_PATCH_FILES "${relative}")
+    endif()
     foreach(_text IN LISTS ARGN)
-        list(APPEND _replacements "${_text}")
+        set_property(GLOBAL APPEND PROPERTY "D3_PATCH_${_key}" "${_text}")
     endforeach()
-    add_custom_command(OUTPUT "${_patched}"
-        COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/patch_source.py" "${_original}" "${_patched}" ${_replacements}
-        DEPENDS "${_original}" "${PROJECT_SOURCE_DIR}/tools/patch_source.py"
-        COMMENT "Mod: patching a copy of ${relative}" VERBATIM)
-    list(REMOVE_AT D3_DECOMP_SOURCES ${_at})
-    list(INSERT D3_DECOMP_SOURCES ${_at} "${_patched}")
+endfunction()
+
+function(d3_apply_patches)
+    get_property(_files GLOBAL PROPERTY D3_PATCH_FILES)
+    foreach(relative IN LISTS _files)
+        set(_original "${D3_DECOMP_ROOT}/src/${relative}")
+        set(_patched "${CMAKE_BINARY_DIR}/generated/mods/${relative}")
+        string(MAKE_C_IDENTIFIER "${relative}" _key)
+        get_property(_replacements GLOBAL PROPERTY "D3_PATCH_${_key}")
+        add_custom_command(OUTPUT "${_patched}"
+            COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/patch_source.py" "${_original}" "${_patched}" ${_replacements}
+            DEPENDS "${_original}" "${PROJECT_SOURCE_DIR}/tools/patch_source.py"
+            COMMENT "Mod: patching a copy of ${relative}" VERBATIM)
+        list(FIND D3_DECOMP_SOURCES "${_original}" _at)
+        list(REMOVE_AT D3_DECOMP_SOURCES ${_at})
+        list(INSERT D3_DECOMP_SOURCES ${_at} "${_patched}")
+        # The copy still finds the headers that the original includes by relative path.
+        get_filename_component(_dir "${_original}" DIRECTORY)
+        set_property(GLOBAL APPEND PROPERTY D3_PATCHED_SOURCES "${_patched}|${_dir}")
+    endforeach()
     set(D3_DECOMP_SOURCES "${D3_DECOMP_SOURCES}" PARENT_SCOPE)
-    # The copy still finds the headers that the original includes by relative path.
-    get_filename_component(_dir "${_original}" DIRECTORY)
-    set_property(GLOBAL APPEND PROPERTY D3_PATCHED_SOURCES "${_patched}|${_dir}")
 endfunction()
 
 # D3_MOD_RUN_SPEED=2 makes heroes walk, run and sprint at twice the game's speed.
@@ -235,6 +251,29 @@ if(D3_MOD_THEME)
     set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/theme.cpp" PROPERTIES COMPILE_DEFINITIONS "D3_MOD_THEME_KEYS=\"${D3_MOD_THEME}\"")
 endif()
 
+# D3_MOD_CHALLENGE turns on challenge rifts offline (src/mods/challenge.cpp). The game
+# fetched each week's challenge from Blizzard's storage as two files; this reads them from
+# a folder instead: $D3_CHALLENGE_DIR, else <game folder>/rift_data. The value is "rotate"
+# (each challenge in the folder in turn, moving on when one is completed) or the number of
+# one challengerift_NN.dat to always play. Rewards earned offline are tagged with the
+# season, as they are online, so seasonal heroes find the reward chest.
+set(D3_MOD_CHALLENGE "" CACHE STRING "Mod: challenge rifts offline from files: rotate, or a file number; empty for off")
+if(D3_MOD_CHALLENGE)
+    if(NOT D3_MOD_CHALLENGE MATCHES "^(rotate|[0-9]+)$")
+        message(FATAL_ERROR "D3_MOD_CHALLENGE must be rotate or a file number, got '${D3_MOD_CHALLENGE}'")
+    endif()
+    message(STATUS "Mod: challenge rifts offline (${D3_MOD_CHALLENGE})")
+    d3_patch_source("X/Client/Console/LobbyService.cpp"
+        --replace "    GetChallengeRiftConfig(nUserIndex,"
+                  "    { void D3ModChallengeGetData(int32, OnlineService::Callback<void (StorageResult, const D3::ChallengeRifts::ChallengeData &, const D3::Leaderboard::WeeklyChallengeData &)>)$<SEMICOLON> D3ModChallengeGetData(nUserIndex, pfnCallback)$<SEMICOLON> return$<SEMICOLON> } GetChallengeRiftConfig(nUserIndex,")
+    d3_patch_source("X/Client/CHero.cpp"
+        --replace "if (Console::Online::LobbyIsConnected(nUserIndex) &&"
+                  "if ((Console::Online::LobbyIsConnected(nUserIndex) || true) &&")
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/challenge.cpp")
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/challenge.cpp" PROPERTIES COMPILE_DEFINITIONS
+        "D3_MOD_CHALLENGE_DIR=\"${D3_GAME_DIR}/rift_data\";D3_MOD_CHALLENGE_PICK=\"${D3_MOD_CHALLENGE}\"")
+endif()
+
 # Shared hooks: decomp files that more than one mod needs are patched once here, to
 # call src/mods/hooks.cpp, which calls each mod in D3_SHARED_HOOKS.
 if(D3_SHARED_HOOKS)
@@ -255,6 +294,7 @@ if(D3_SHARED_HOOKS)
     set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/hooks.cpp" PROPERTIES COMPILE_DEFINITIONS "${_hook_defs}")
 endif()
 
+d3_apply_patches()
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
 get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
 foreach(_entry IN LISTS _patched_sources)

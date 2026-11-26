@@ -93,9 +93,29 @@
     ]
   },
   {
+    "id": "D3_MOD_CHALLENGE",
+    "title": "Challenge Rifts (offline)",
+    "description": "Play Challenge Rifts without Blizzard's servers. Each challenge was two files the game downloaded every week; offline nothing arrives, so the game reads them from the rift_data folder in your game folder instead (challengerift_config.dat and challengerift_00.dat, challengerift_01.dat and so on). This project ships no challenge files: they hold the hero and account of the player who set the record. With Rotate, the challenges in the folder take turns, moving on each time you earn a reward; a number always plays that file. Challenge Rifts open once a hero on the account has cleared a solo Greater Rift (the Cheats panel's Greater rifts to 70 does that). Leaderboards stay unavailable.",
+    "type": "choice",
+    "default": "rotate",
+    "pattern": "^(rotate|[0-9]{1,3})$",
+    "choices": [
+      "rotate",
+      "0",
+      "1",
+      "2"
+    ],
+    "labels": [
+      "Rotate through the files",
+      "Always challengerift_00.dat",
+      "Always challengerift_01.dat",
+      "Always challengerift_02.dat"
+    ]
+  },
+  {
     "id": "D3_MOD_CHEATS",
     "title": "Cheats (for testing)",
-    "description": "In the game, F1 raises your hero to level 70, F2 adds 100 paragon levels and F3 adds 10,000,000 gold. While the game runs, the Cheats panel below can also add gold, give you any item, unlock Kanai's Cube and give Horadric Caches from any act (at the game's current difficulty). Changes are saved with your hero.",
+    "description": "In the game, F1 raises your hero to level 70, F2 adds 100 paragon levels and F3 adds 10,000,000 gold. While the game runs, the Cheats panel below can also add gold, give you any item, unlock Kanai's Cube, count greater rifts up to a tier as cleared solo (which opens Challenge Rifts) and give Horadric Caches from any act (at the game's current difficulty). Changes are saved with your hero.",
     "type": "toggle",
     "default": "1",
     "pattern": "^1$"

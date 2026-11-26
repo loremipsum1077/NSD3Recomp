@@ -98,7 +98,7 @@ def cheats_status():
 
 
 # What the page may ask the game to do (src/mods/cheats.cpp reads the same lines).
-CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10}|cube|cache [1-5]( ([1-9]|1[0-9]|20))?)$")
+CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10}|cube|rifts ([1-9]|[1-9][0-9]|1[0-4][0-9]|150)|cache [1-5]( ([1-9]|1[0-9]|20))?)$")
 
 
 def current_values():
@@ -210,6 +210,7 @@ PAGE = r"""<!doctype html>
 </div>
 <div class="row">
   <button data-cheat="cube">Unlock Kanai's Cube</button>
+  <button data-cheat="rifts 70">Greater rifts to 70 (opens Challenge Rifts)</button>
   <input type="text" inputmode="numeric" id="caches" value="1" aria-label="Number of caches" style="width:50px">
   <span>Horadric Caches from act</span>
   <button data-act="1">I</button><button data-act="2">II</button><button data-act="3">III</button><button data-act="4">IV</button><button data-act="5">V</button>

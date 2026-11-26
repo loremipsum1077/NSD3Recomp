@@ -216,6 +216,18 @@ void AddGold(ActorCommonData & tACD, long long nGold)
     Say("gold +" + std::to_string(nGold) + " -> " + std::to_string((long long)tACD.GetCurrencyAmount(CURRENCY_GOLD)));
 }
 
+// Greater rifts: count solo greater rift nLevel as cleared by this hero, which opens the
+// tiers up to it at the obelisk. When the hero is next saved, the account is marked as
+// having cleared a solo greater rift, which is what unlocks Challenge Rifts.
+void SetRiftLevel(ActorCommonData & tACD, int nLevel)
+{
+    nLevel = std::max(1, std::min(nLevel, 150));
+    tACD.AttributesSetInt(FastAttribKey(ATTRIBUTE_HIGHEST_SOLO_RIFT_LEVEL), std::max(nLevel, (int)tACD.AttributesGetInt(FastAttribKey(ATTRIBUTE_HIGHEST_SOLO_RIFT_LEVEL))));
+    tACD.AttributesSetInt(FastAttribKey(ATTRIBUTE_HIGHEST_HERO_SOLO_RIFT_LEVEL), std::max(nLevel, (int)tACD.AttributesGetInt(FastAttribKey(ATTRIBUTE_HIGHEST_HERO_SOLO_RIFT_LEVEL))));
+    tACD.AttributesSetInt(FastAttribKey(ATTRIBUTE_HIGHEST_UNLOCKED_RIFT_LEVEL), std::max(nLevel, (int)tACD.AttributesGetInt(FastAttribKey(ATTRIBUTE_HIGHEST_UNLOCKED_RIFT_LEVEL))));
+    Say("greater rift " + std::to_string(nLevel) + " counted as cleared solo (opens Challenge Rifts once saved)");
+}
+
 // Horadric Caches are one item per act and difficulty: HoradricCacheA1, A1Hard,
 // A1Expert, A1Master, A1Torment (Torment 1) and A1Torment2 to A1Torment13. The data has
 // none past Torment 13, so Torment 14-16 get the Torment 13 cache.
@@ -307,6 +319,10 @@ void Run(const char * szLine, Player & tPlayer, ACDID idACDPlayer, ActorCommonDa
     else if (sscanf(szLine, "level %d", &nValue) == 1)
     {
         RaiseLevel(tACD, nValue);
+    }
+    else if (sscanf(szLine, "rifts %d", &nValue) == 1)
+    {
+        SetRiftLevel(tACD, nValue);
     }
     else if (sscanf(szLine, "paragon %d", &nValue) == 1)
     {

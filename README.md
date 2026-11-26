@@ -217,18 +217,32 @@ it offers are listed in `config/mods.json`.
   (29); the game also reads `DoubleBloodShards`, `DoubleRiftKeystones` and `ParagonCap`.
   The theme applies to every hero. With any theme on, the Altar of Rites and Visions of
   Enmity are on too, as in 2.7.7. Turn it off with `-DD3_MOD_THEME=`.
+- `-DD3_MOD_CHALLENGE=rotate`: Challenge Rifts offline. On the Switch the game
+  downloaded each week's challenge as two files from Blizzard's servers:
+  `challengerift_config.dat` (the challenge's number, times and orb multiplier) and
+  `challengerift_NN.dat` (the rift, and the hero and account to play it with). Offline
+  nothing arrives, so the game reads them from a folder instead: `D3_CHALLENGE_DIR`,
+  else `rift_data` in the game folder. No challenge files ship with this project, as
+  they hold another player's hero and account; use files you saved yourself. With
+  `rotate` the distinct challenges in the folder take turns, moving on each time a reward
+  is earned; a number (`-DD3_MOD_CHALLENGE=3`) always plays `challengerift_03.dat`.
+  The challenge never expires, the reward cache counts offline, and leaderboards stay
+  unavailable. Challenge Rifts open once a hero on the account has cleared a solo
+  Greater Rift; the `rifts 70` cheat below does that. `src/mods/challenge.cpp`; turn it
+  off with `-DD3_MOD_CHALLENGE=`.
 - `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
 - `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70,
   F2 adds 100 paragon levels and F3 adds 10,000,000 gold. While the game runs, the Mods
   page's Cheats panel can do the same, add any amount of gold, give any item, found
-  by its in-game name, unlock Kanai's Cube, and give Horadric Caches from any act (for
+  by its in-game name, unlock Kanai's Cube, count greater rifts up to a tier as cleared
+  solo (which opens Challenge Rifts), and give Horadric Caches from any act (for
   the game's current difficulty). Everything goes
   through the game's own level-up and item code (`src/mods/cheats.cpp`), so it is
   saved with the hero like anything earned. The page and the game exchange small
   files in `<save folder>/cheats/`; if you start the game yourself with a different
   `D3_SAVE_DIR`, write commands to that folder's `cheats/commands.txt` instead
-  (`level 70`, `paragon 100`, `gold 1000000`, `item Unique_Helm_002_p1`, `cube`,
+  (`level 70`, `paragon 100`, `gold 1000000`, `item Unique_Helm_002_p1`, `cube`, `rifts 70`,
   `cache 3 5` for five act III caches). Turn it off
   with `-DD3_MOD_CHEATS=`.
 - `-DD3_MOD_MOUSE=1`: a mouse or trackpad alongside the controller. The Switch's menus

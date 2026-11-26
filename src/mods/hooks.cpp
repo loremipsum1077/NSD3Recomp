@@ -1,6 +1,6 @@
-// Hook points shared by more than one mod. A decomp file can be patched by only one
-// mod, so the files several mods need (cmake/DecompSources.cmake, "shared hooks") are
-// patched once to call these, and each mod that is on is called in turn. CMake defines
+// Hook points shared by more than one mod. Two mods cannot both replace the same line of a
+// decomp file, so the places several mods need (cmake/DecompSources.cmake, "shared hooks")
+// are patched once to call these, and each mod that is on is called in turn. CMake defines
 // D3_HOOK_<MOD>=1 for each mod that uses them.
 #include "X/Common/Definitions/GameBalanceDefinition.h"
 
