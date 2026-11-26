@@ -112,6 +112,13 @@ struct Directory {
 
 }  // namespace
 
+// The save folder, for host code outside nn::fs (the Cheats mod keeps its files there).
+extern "C" const char * d3_save_dir(void)
+{
+    static const std::string root = SaveRoot();
+    return root.c_str();
+}
+
 namespace nn { namespace fs {
 
 struct FileHandle { void * handle; };

@@ -142,6 +142,20 @@ if(D3_MOD_SEASON)
         --replace "::execute>(pfnCallback, FALSE))$<SEMICOLON>" "::execute>(pfnCallback, TRUE))$<SEMICOLON>")
 endif()
 
+# D3_MOD_CHEATS=1 adds testing cheats: F1 raises the hero to the level cap, F2 adds 100
+# paragon levels, and the Mods page can do either or give any item while the game runs
+# (src/mods/cheats.cpp). The server's update calls it once per update, right after the
+# game's own Lua scripts, so it runs on the server's thread like a quest script.
+set(D3_MOD_CHEATS "" CACHE STRING "Mod: testing cheats (level, paragon, items); 1 to turn on, empty for off")
+if(D3_MOD_CHEATS)
+    message(STATUS "Mod: cheats (F1 level cap, F2 +100 paragon, Mods page for items)")
+    # The call's own block declares it, so the patch adds no line before the original's.
+    d3_patch_source("X/Server/SGame.cpp"
+        --replace "        LuaScriptUpdate()$<SEMICOLON>"
+                  "        LuaScriptUpdate()$<SEMICOLON> { void D3ModCheatsUpdate()$<SEMICOLON> D3ModCheatsUpdate()$<SEMICOLON> }")
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/cheats.cpp")
+endif()
+
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
 get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
 foreach(_entry IN LISTS _patched_sources)

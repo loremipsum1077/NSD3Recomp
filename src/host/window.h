@@ -34,6 +34,11 @@ int d3_window_pump(void);
 // if one is attached, combined with the keyboard.
 void d3_input_read(struct d3_pad_state * out);
 
+// Cheat hotkeys pressed since the last call (D3_HOTKEY_* bits), then cleared. Any thread.
+// Only the Cheats mod (D3_MOD_CHEATS) acts on them.
+enum { D3_HOTKEY_LEVEL_MAX = 1 << 0, D3_HOTKEY_PARAGON = 1 << 1 };
+int d3_hotkeys_take(void);
+
 #ifdef __cplusplus
 }
 #endif

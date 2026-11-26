@@ -3,6 +3,7 @@
 // Keyboard: W A S D left stick, I J K L right stick, arrow keys d-pad,
 //   Space or Return = A, Escape = B, Q = Y, E = X, Tab = Plus, Backspace = Minus,
 //   1 = L, 2 = R, 3 = ZL, 4 = ZR.
+//   F1 and F2 are the Cheats mod's hotkeys (d3_hotkeys_take).
 // Game controllers map by position: the right-hand face button is always the
 // Switch's A, whatever letter is printed on it.
 #include "window.h"
@@ -24,6 +25,7 @@ bool g_quit;
 
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 d3_pad_state g_state;
+int g_hotkeys;  // under g_lock
 
 struct KeyButton { SDL_Scancode key; int button; };
 const KeyButton kKeys[] = {
@@ -236,6 +238,14 @@ int d3_window_pump(void)
         case SDL_QUIT:
             g_quit = true;
             break;
+        case SDL_KEYDOWN:
+            if (!e.key.repeat && (e.key.keysym.scancode == SDL_SCANCODE_F1 || e.key.keysym.scancode == SDL_SCANCODE_F2))
+            {
+                pthread_mutex_lock(&g_lock);
+                g_hotkeys |= e.key.keysym.scancode == SDL_SCANCODE_F1 ? D3_HOTKEY_LEVEL_MAX : D3_HOTKEY_PARAGON;
+                pthread_mutex_unlock(&g_lock);
+            }
+            break;
         case SDL_CONTROLLERDEVICEADDED:
             OpenFirstController();
             break;
@@ -251,6 +261,15 @@ int d3_window_pump(void)
     }
     Sample();
     return g_quit;
+}
+
+int d3_hotkeys_take(void)
+{
+    pthread_mutex_lock(&g_lock);
+    int keys = g_hotkeys;
+    g_hotkeys = 0;
+    pthread_mutex_unlock(&g_lock);
+    return keys;
 }
 
 void d3_input_read(struct d3_pad_state * out)

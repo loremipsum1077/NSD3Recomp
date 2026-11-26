@@ -205,6 +205,15 @@ it offers are listed in `config/mods.json`.
   online parts of seasons stay unavailable. Turn it off with `-DD3_MOD_SEASON=`.
 - `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
+- `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70
+  and F2 adds 100 paragon levels. While the game runs, the Mods page's Cheats panel
+  can do the same and give any item, found by its in-game name. Everything goes
+  through the game's own level-up and item code (`src/mods/cheats.cpp`), so it is
+  saved with the hero like anything earned. The page and the game exchange small
+  files in `<save folder>/cheats/`; if you start the game yourself with a different
+  `D3_SAVE_DIR`, write commands to that folder's `cheats/commands.txt` instead
+  (`level 70`, `paragon 100`, `item Unique_Helm_002_p1`). Turn it off with
+  `-DD3_MOD_CHEATS=`.
 
 ## Measuring progress
 

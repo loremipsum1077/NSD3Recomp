@@ -49,5 +49,13 @@
       "11",
       "12"
     ]
+  },
+  {
+    "id": "D3_MOD_CHEATS",
+    "title": "Cheats (for testing)",
+    "description": "In the game, F1 raises your hero to level 70 and F2 adds 100 paragon levels. While the game runs, the Cheats panel below can also give you any item. Changes are saved with your hero.",
+    "type": "toggle",
+    "default": "1",
+    "pattern": "^1$"
   }
 ]

@@ -81,6 +81,26 @@ def game_path():
     return current_build() / "d3"
 
 
+def save_dir():
+    found = re.search(r"^D3_SAVE_DIR:[A-Z]+=(.*)$", cache_text(current_build()), re.M)
+    return pathlib.Path(found.group(1)) if found and found.group(1) else ROOT / "save"
+
+
+def cheats_dir():
+    return save_dir() / "cheats"
+
+
+def cheats_status():
+    try:
+        return json.loads((cheats_dir() / "status.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+
+# What the page may ask the game to do (src/mods/cheats.cpp reads the same lines).
+CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?)$")
+
+
 def current_values():
     """What the build directory is configured with now."""
     values = {}
@@ -160,6 +180,11 @@ PAGE = r"""<!doctype html>
   th, td { text-align:left; padding:8px 14px; border-bottom:1px solid var(--line); font-size:15px; }
   th { color:var(--dim); font-weight:600; font-size:13px; }
   tr:last-child td { border-bottom:0; }
+  #cheats input[type=text], #cheats input[type=search], #cheats select { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink); }
+  #items td.n { color:var(--dim); font:12px ui-monospace, Menlo, monospace; }
+  #items .legendary { color:#c2410c; } #items .set { color:#15803d; }
+  @media (prefers-color-scheme: dark) { #items .legendary { color:#fb923c; } #items .set { color:#4ade80; } }
+  #items button { padding:4px 12px; }
   kbd { font:13px ui-monospace, Menlo, monospace; background:var(--bg); border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:1px 6px; }
 </style></head><body><main>
 <h1>Mods</h1>
@@ -173,6 +198,23 @@ PAGE = r"""<!doctype html>
   <span id="status"></span>
 </div>
 <pre id="log" aria-label="Build output"></pre>
+<section id="cheats" hidden>
+<h2>Cheats</h2>
+<p class="sub" style="margin-bottom:12px" id="cheatstate">Start the game and load a hero.</p>
+<div class="row" style="margin-top:0">
+  <button data-cheat="level 70">Level 70</button>
+  <input type="text" inputmode="numeric" id="paragon" value="100" aria-label="Paragon levels to add" style="width:80px">
+  <button id="addparagon">Add paragon levels</button>
+</div>
+<div class="row">
+  <input type="search" id="itemsearch" placeholder="Find an item: name or type" aria-label="Find an item" style="flex:1;min-width:220px">
+  <select id="rarity" aria-label="Rarity"><option value="">All items</option><option value="legendary">Legendary</option><option value="set">Set</option><option value="legset" selected>Legendary and set</option></select>
+  <label><input type="checkbox" id="current" checked> Hide old versions</label>
+</div>
+<table id="items"></table>
+<p class="note" id="itemnote"></p>
+<pre id="cheatlog" aria-label="What the game did" style="height:120px"></pre>
+</section>
 <h2>Controls</h2>
 <p class="sub" style="margin-bottom:12px">The game shows Switch button names on screen. On the keyboard they are these keys; a connected controller also works.</p>
 <table>
@@ -190,6 +232,7 @@ PAGE = r"""<!doctype html>
   <tr><td>ZR</td><td><kbd>4</kbd></td></tr>
   <tr><td>+ (plus)</td><td><kbd>Tab</kbd></td></tr>
   <tr><td>&minus; (minus)</td><td><kbd>Backspace</kbd></td></tr>
+  <tr><td>Cheats mod: level 70 / +100 paragon</td><td><kbd>F1</kbd> <kbd>F2</kbd></td></tr>
 </table>
 <p class="note">This page runs on your computer only. Closing it stops the helper program; a game you started keeps running.</p>
 </main><script>
@@ -200,7 +243,9 @@ function field(m, value) {
   const on = value !== "";
   const v = on ? value : m.default;
   let input;
-  if (m.type === "choice") {
+  if (m.type === "toggle") {
+    input = "<span></span>";
+  } else if (m.type === "choice") {
     const all = m.choices.includes(v) ? m.choices : m.choices.concat([v]);
     input = `<select data-v="${m.id}">` + all.map(c => `<option${c === v ? " selected" : ""}>${c}</option>`).join("") + `</select>`;
   } else {
@@ -209,8 +254,52 @@ function field(m, value) {
   return `<div class="mod"><input type="checkbox" id="c_${m.id}" data-c="${m.id}"${on ? " checked" : ""}>
     <label for="c_${m.id}">${m.title}</label>${input}<p>${m.description}</p></div>`;
 }
+let items = null, cheatsShown = false;
+async function cheat(command) {
+  const r = await (await fetch(`/cheat?t=${T}`, {method: "POST", body: JSON.stringify({command})})).json();
+  $("itemnote").textContent = r.error ? r.error : `Sent: ${command}. The game does it within a second.`;
+}
+async function loadItems() {
+  try { items = await (await fetch(`/items?t=${T}`)).json(); } catch (e) { items = []; }
+  // A legendary or set item whose name also belongs to one that drops is an old copy.
+  const dropping = new Set(items.filter(i => i.drops).map(i => i.display));
+  items.forEach(i => { i.old = i.rarity && !i.drops && dropping.has(i.display); });
+  drawItems();
+}
+const esc = t => t.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function drawItems() {
+  if (!items) return;
+  if (!items.length) { $("items").innerHTML = ""; $("itemnote").textContent = "The item list appears once the game has started with this mod."; return; }
+  const words = $("itemsearch").value.toLowerCase().split(/\s+/).filter(Boolean);
+  const r = $("rarity").value, current = $("current").checked;
+  const hits = items.filter(i => i.display &&
+    (!r || (r === "legset" ? i.rarity : i.rarity === r)) && (!current || !i.old) &&
+    words.every(w => (i.display + " " + i.name + " " + i.type).toLowerCase().includes(w)));
+  $("items").innerHTML = `<tr><th>Item</th><th>Type</th><th>Game name</th><th></th></tr>` + hits.slice(0, 80).map(i =>
+    `<tr><td class="${i.rarity}">${esc(i.display)}</td><td>${esc(i.type)}</td><td class="n">${esc(i.name)}</td>` +
+    `<td><button data-item="${esc(i.name)}">Give</button></td></tr>`).join("");
+  $("itemnote").textContent = hits.length > 80 ? `Showing 80 of ${hits.length}. Type more to narrow it down.` : `${hits.length} items.`;
+}
+function drawCheats(s) {
+  $("cheats").hidden = !s.cheats;
+  if (!s.cheats) return;
+  if (!cheatsShown) { cheatsShown = true; loadItems(); }
+  const st = s.cheat_status, fresh = st && Date.now() / 1000 - st.updated < 10;
+  $("cheatstate").textContent = !s.running && !fresh ? "Start the game and load a hero. Requests made now wait until you are in a game." :
+    fresh && st.in_game ? `In game: level ${st.level}, paragon ${st.paragon}.` : "Waiting for you to enter a game; requests wait until then.";
+  if (st && st.log) $("cheatlog").textContent = st.log.join("\n");
+  if (items && !items.length && fresh) loadItems();
+}
+$("cheats").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.cheat) cheat(b.dataset.cheat);
+  else if (b.id === "addparagon") cheat(`paragon ${parseInt($("paragon").value, 10) || 0}`);
+  else if (b.dataset.item) cheat(`item ${b.dataset.item}`);
+});
+["itemsearch", "rarity", "current"].forEach(id => $(id).addEventListener("input", drawItems));
 function sync() {
-  document.querySelectorAll("[data-c]").forEach(c => { document.querySelector(`[data-v="${c.dataset.c}"]`).disabled = !c.checked; });
+  document.querySelectorAll("[data-c]").forEach(c => { const v = document.querySelector(`[data-v="${c.dataset.c}"]`); if (v) v.disabled = !c.checked; });
 }
 async function poll() {
   let s;
@@ -225,6 +314,7 @@ async function poll() {
     $("versionbox").hidden = s.builds.length < 2;
   }
   $("version").disabled = s.building || s.running;
+  drawCheats(s);
   if (s.lines.length) {
     const log = $("log");
     log.textContent += s.lines.join("\n") + "\n"; shown += s.lines.length; log.scrollTop = log.scrollHeight;
@@ -242,7 +332,7 @@ async function poll() {
 $("build").addEventListener("click", async e => {
   e.preventDefault();
   const values = {};
-  document.querySelectorAll("[data-c]").forEach(c => { values[c.dataset.c] = c.checked ? document.querySelector(`[data-v="${c.dataset.c}"]`).value.trim() : ""; });
+  document.querySelectorAll("[data-c]").forEach(c => { const v = document.querySelector(`[data-v="${c.dataset.c}"]`); values[c.dataset.c] = c.checked ? (v ? v.value.trim() : "1") : ""; });
   const r = await (await fetch(`/build?t=${T}`, {method: "POST", body: JSON.stringify(values)})).json();
   if (r.error) { $("status").textContent = r.error; $("status").className = "bad"; }
 });
@@ -286,9 +376,16 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 state["last_seen"], state["seen"] = time.time(), True
                 body = {"lines": state["log"][start:], "building": state["building"], "result": state["result"]}
-            body.update(mods=mods(), values=current_values(), built=game_path().exists(), running=game_running(),
-                        builds=builds(), build=current_build().name)
+            values = current_values()
+            body.update(mods=mods(), values=values, built=game_path().exists(), running=game_running(),
+                        builds=builds(), build=current_build().name,
+                        cheats=bool(values.get("D3_MOD_CHEATS")), cheat_status=cheats_status())
             return self.send(body)
+        if self.path.startswith("/items"):
+            try:
+                return self.send((cheats_dir() / "items.json").read_bytes())
+            except OSError:
+                return self.send([])
         return self.send(PAGE.encode(), "text/html; charset=utf-8")
 
     def do_POST(self):
@@ -315,6 +412,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send({"error": "A build is already running."})
                 state["building"], state["result"] = True, ""
             threading.Thread(target=build, args=(current_build(), values), daemon=True).start()
+            return self.send({"ok": True})
+        if self.path.startswith("/cheat"):
+            try:
+                command = str(json.loads(body or b"{}").get("command", "")).strip()
+            except ValueError:
+                command = ""
+            if not CHEAT.match(command):
+                return self.send({"error": "That is not a cheat the game understands."}, code=400)
+            folder = cheats_dir()
+            folder.mkdir(parents=True, exist_ok=True)
+            with open(folder / "commands.txt", "a") as f:
+                f.write(command + "\n")
             return self.send({"ok": True})
         if self.path.startswith("/select"):
             try:
