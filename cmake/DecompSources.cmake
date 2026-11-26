@@ -220,6 +220,21 @@ if(D3_MOD_CORRUPT)
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/corrupt.cpp")
 endif()
 
+# D3_MOD_THEME turns on a season theme offline (src/mods/theme.cpp). 2.7.7's themes are
+# community buffs that Blizzard's lobby switched on from its Config.txt; the value is the
+# list of buff names it would have sent (CommunityBuff<Name> "1"), comma-separated, e.g.
+# "SoulShards" or "ShadowClones,FourthKanaisCubeSlot". The buffs apply to every hero.
+set(D3_MOD_THEME "" CACHE STRING "Mod: season theme (community buff names, comma-separated); empty for off")
+if(D3_MOD_THEME)
+    if(NOT D3_MOD_THEME MATCHES "^[A-Za-z]+(,[A-Za-z]+)*$")
+        message(FATAL_ERROR "D3_MOD_THEME must be buff names separated by commas, got '${D3_MOD_THEME}'")
+    endif()
+    message(STATUS "Mod: season theme ${D3_MOD_THEME}")
+    list(APPEND D3_SHARED_HOOKS THEME)  # update
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/theme.cpp")
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/theme.cpp" PROPERTIES COMPILE_DEFINITIONS "D3_MOD_THEME_KEYS=\"${D3_MOD_THEME}\"")
+endif()
+
 # Shared hooks: decomp files that more than one mod needs are patched once here, to
 # call src/mods/hooks.cpp, which calls each mod in D3_SHARED_HOOKS.
 if(D3_SHARED_HOOKS)

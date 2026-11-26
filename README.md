@@ -205,7 +205,18 @@ it offers are listed in `config/mods.json`.
 - `-DD3_MOD_SEASON=1`: make that season number active without the online service,
   so the Season Journey and seasonal heroes are available. The game's data holds 12 sets
   of seasonal content that repeat, so 1 to 12 are all the distinct choices. Leaderboards and the other
-  online parts of seasons stay unavailable. Turn it off with `-DD3_MOD_SEASON=`.
+  online parts of seasons stay unavailable. The number picks the Season Journey only;
+  a season's theme is the next mod. Turn it off with `-DD3_MOD_SEASON=`.
+- `-DD3_MOD_THEME=SoulShards`: turn on a season theme. In 2.7.7 the themes are
+  "community buffs" that Blizzard's servers switched on for a season, so offline none
+  start. The value is the buff names, comma-separated: `DoubleGoblins` (season 14),
+  `DoubleBountyBags` (15), `RoyalGrandeur` (16), `LegacyOfNightmares` (17),
+  `TriunesWill` (18), `Pandemonium` (19), `KanaiPowers` (20, 31), `TrialsOfTempests`
+  (21), `ShadowClones,FourthKanaisCubeSlot` (22), `EtherealItems` (24, 32), `SoulShards`
+  (25, 30), `SwarmRifts`, `SanctifiedItems` (27), `DarkAlchemy` (28) and `NestingPortals`
+  (29); the game also reads `DoubleBloodShards`, `DoubleRiftKeystones` and `ParagonCap`.
+  The theme applies to every hero. With any theme on, the Altar of Rites and Visions of
+  Enmity are on too, as in 2.7.7. Turn it off with `-DD3_MOD_THEME=`.
 - `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
 - `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70,

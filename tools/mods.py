@@ -255,7 +255,8 @@ function field(m, value) {
     input = "<span></span>";
   } else if (m.type === "choice") {
     const all = m.choices.includes(v) ? m.choices : m.choices.concat([v]);
-    input = `<select data-v="${m.id}">` + all.map(c => `<option${c === v ? " selected" : ""}>${c}</option>`).join("") + `</select>`;
+    const label = c => (m.labels && m.choices.indexOf(c) >= 0) ? m.labels[m.choices.indexOf(c)] : c;
+    input = `<select data-v="${m.id}">` + all.map(c => `<option value="${c}"${c === v ? " selected" : ""}>${label(c)}</option>`).join("") + `</select>`;
   } else {
     input = `<input type="text" inputmode="decimal" data-v="${m.id}" value="${v}" aria-label="${m.title} value">`;
   }

@@ -31,7 +31,7 @@
   {
     "id": "D3_MOD_SEASON",
     "title": "Seasons (offline)",
-    "description": "Make a season active without Blizzard's servers, so the Season Journey and seasonal heroes are available. The game's data holds 12 sets of seasonal content that repeat (season 13 is the same as 1), so these are all the distinct choices. Leaderboards and other online parts of seasons stay unavailable.",
+    "description": "Make a season active without Blizzard's servers, so the Season Journey and seasonal heroes are available. The game's data holds 12 sets of seasonal content that repeat (season 13 is the same as 1), so these are all the distinct choices. Leaderboards and other online parts of seasons stay unavailable. The season number picks the Season Journey only; for a season's theme, turn on Season theme below.",
     "type": "choice",
     "default": "1",
     "pattern": "^[0-9]{1,3}$",
@@ -48,6 +48,48 @@
       "10",
       "11",
       "12"
+    ]
+  },
+  {
+    "id": "D3_MOD_THEME",
+    "title": "Season theme (offline)",
+    "description": "Turn on one of 2.7.7's season themes. On the Switch these were switched on by Blizzard's servers for the length of a season, so offline none ever start. The theme applies to every hero, seasonal or not. With any theme on, the Altar of Rites (season 28) and Visions of Enmity portals (season 29) are on too, as in 2.7.7. Season 23's theme (followers that fight like heroes) is built into 2.7.7 and needs no switch; season 26's (Ethereal on demand) is the same as 24.",
+    "type": "choice",
+    "default": "SoulShards",
+    "pattern": "^[A-Za-z]+(,[A-Za-z]+)*$",
+    "choices": [
+      "DoubleGoblins",
+      "DoubleBountyBags",
+      "RoyalGrandeur",
+      "LegacyOfNightmares",
+      "TriunesWill",
+      "Pandemonium",
+      "KanaiPowers",
+      "TrialsOfTempests",
+      "ShadowClones,FourthKanaisCubeSlot",
+      "EtherealItems",
+      "SoulShards",
+      "SwarmRifts",
+      "SanctifiedItems",
+      "DarkAlchemy",
+      "NestingPortals"
+    ],
+    "labels": [
+      "Season 14: double treasure goblins",
+      "Season 15: double bounty caches",
+      "Season 16: Royal Grandeur for everyone",
+      "Season 17: Legacy of Nightmares for everyone",
+      "Season 18: Triune's Will (cult pools)",
+      "Season 19: Pandemonium (angels and demons in rifts)",
+      "Season 20 and 31: Kanai's powers, one item of each kind free",
+      "Season 21: Trials of the Tempests (elemental bursts)",
+      "Season 22: Echoing Nightmares (shadow clones, 4th cube slot)",
+      "Season 24 and 32: ethereal items",
+      "Season 25 and 30: the Lords of Hell's soul shards",
+      "Swarm rifts",
+      "Season 27: sanctified items (Angelic Crucible)",
+      "Season 28: Altar of Rites only",
+      "Season 29: Visions of Enmity only (nesting portals)"
     ]
   },
   {

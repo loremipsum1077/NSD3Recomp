@@ -14,6 +14,9 @@ void D3ModCorruptExtendTable(GameBalanceDefinition * pdefGB, int32 & nCount, voi
 const char * D3ModCorruptString(SNO snoStringList, const char * szLabel);
 void D3ModCorruptUpdate();
 #endif
+#if D3_HOOK_THEME
+void D3ModThemeUpdate();  // src/mods/theme.cpp
+#endif
 
 // As each GameBalance file is loaded, before its rows are registered: rows may be added.
 void D3ModExtendGameBalance(GameBalanceDefinition * pdefGB, int32 & nCount, void *& pTable)
@@ -53,5 +56,8 @@ void D3ModServerUpdate()
 #endif
 #if D3_HOOK_CORRUPT
     D3ModCorruptUpdate();
+#endif
+#if D3_HOOK_THEME
+    D3ModThemeUpdate();
 #endif
 }
