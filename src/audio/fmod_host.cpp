@@ -49,6 +49,10 @@ void HostFree(void * p) { malloc_zone_free(malloc_default_zone(), p); }
 
 const int kRate = 48000;
 const int kMaxChannels = 256;
+// The game sizes its own table of playing sounds by the channel count it passes to
+// FMOD_System_Init (128) and indexes it with FMOD_Channel_GetIndex, so no channel
+// index may reach that count.
+int g_channelLimit = kMaxChannels;
 
 // ---- sounds ----
 
@@ -1139,8 +1143,12 @@ FMOD_RESULT FMOD_System_GetSoftwareFormat(FMOD_SYSTEM *, int * rate, FMOD_SPEAKE
 FMOD_RESULT FMOD_System_SetStreamBufferSize(FMOD_SYSTEM *, unsigned int, FMOD_TIMEUNIT) { return FMOD_OK; }
 FMOD_RESULT FMOD_System_SetCallback(FMOD_SYSTEM *, FMOD_SYSTEM_CALLBACK, FMOD_SYSTEM_CALLBACK_TYPE) { return FMOD_OK; }
 
-FMOD_RESULT FMOD_System_Init(FMOD_SYSTEM *, int, FMOD_INITFLAGS, void *)
+FMOD_RESULT FMOD_System_Init(FMOD_SYSTEM *, int maxchannels, FMOD_INITFLAGS, void *)
 {
+    if (maxchannels > 0)
+    {
+        g_channelLimit = maxchannels < kMaxChannels ? maxchannels : kMaxChannels;
+    }
     if (!g_started)
     {
         g_started = true;
@@ -1218,7 +1226,7 @@ FMOD_RESULT FMOD_System_PlaySound(FMOD_SYSTEM *, FMOD_SOUND * sound, FMOD_CHANNE
 {
     Sound * s = reinterpret_cast<Sound *>(sound);
     Lock lock;
-    for (int i = 0; i < kMaxChannels; i++)
+    for (int i = 0; i < g_channelLimit; i++)
     {
         Channel & c = g_channels[i];
         if (c.playing)
