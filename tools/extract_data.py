@@ -151,6 +151,33 @@ def elf_symbols(path):
     return by_name, by_addr
 
 
+def csv_symbols(data_dir, size_hints=None, base=0x7100000000):
+    """The same tables as elf_symbols, for a game version without a debug file: names and
+    addresses from a decomp checkout's data/<version>/functions.csv and data_symbols.csv.
+    Data sizes come from another version's debug file when it has the same name, else from
+    the distance to the next known symbol."""
+    import csv
+    hints = elf_symbols(size_hints)[0] if size_hints else {}
+    rows = []                                           # (address, size or None, name, is_function)
+    for r in csv.DictReader(open(data_dir / "functions.csv")):
+        rows.append((int(r["Address"], 16) - base, int(r["Size"]), r["Name"], True))
+    for r in csv.DictReader(open(data_dir / "data_symbols.csv")):
+        rows.append((int(r["Address"], 16) - base, None, r["Name"], False))
+    rows.sort(key=lambda r: (r[0], r[3], r[2]))
+    by_name, by_addr = {}, {}
+    for i, (addr, size, name, is_func) in enumerate(rows):
+        if size is None:
+            nxt = next((a for a, *_ in rows[i + 1:] if a > addr), addr + 8)
+            gap = min(nxt - addr, 0x40000)
+            hint = hints.get(name)
+            size = min(hint[1], gap) if hint and hint[1] and not hint[2] else gap
+        local = name.startswith(("_ZL", "_ZZ", "_ZGVZ", "_ZGVL")) or ".L" in name
+        by_name.setdefault(name, (addr, size, is_func, not local))
+        if not local or addr not in by_addr:
+            by_addr[addr] = (name, not local)
+    return by_name, by_addr
+
+
 def c_string(b):
     out = []
     for c in b:
@@ -170,16 +197,22 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--skip-defined-in", metavar="FILE",
                     help="file listing the decomp's compiled objects: symbols they define are skipped")
+    ap.add_argument("--symbols-csv", metavar="DIR",
+                    help="for a version without a debug file: a decomp's data/<version> folder")
+    ap.add_argument("--size-hints", metavar="NSS", help="another version's debug file, for data sizes")
     ap.add_argument("--add-undefined", action="store_true",
                     help="first add still-undefined data symbols from the last link probe to the list")
     a = ap.parse_args()
     game = Path(a.game)
     nso, nss = game / "exefs/main", game / "romfs/DiabloIIINX64r.nss"
-    for p in (nso, nss):
+    for p in (nso,) if a.symbols_csv else (nso, nss):
         if not p.is_file():
             sys.exit(f"{p} not found: the data extraction needs your own game dump (see README.md)")
     prog = Program(nso)
-    by_name, by_addr = elf_symbols(nss)
+    if a.symbols_csv:
+        by_name, by_addr = csv_symbols(Path(a.symbols_csv), Path(a.size_hints) if a.size_hints else None)
+    else:
+        by_name, by_addr = elf_symbols(nss)
     if a.add_undefined:
         # Append every still-undefined symbol that is data in the original. Run after
         # tools/link_probe.py; repeat until nothing is added, because extracted data

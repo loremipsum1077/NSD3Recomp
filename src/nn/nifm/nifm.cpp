@@ -20,6 +20,8 @@ void CancelNetworkRequest() {}
 bool IsNetworkRequestOnHold() { return false; }
 bool IsNetworkAvailable() { return false; }
 Result HandleNetworkRequestResult() { return NotConnected(); }
+// 2.7.7: shows the system's network error dialog. Like the other console dialogs, nothing.
+void HandleNetworkRequestErrorResult() {}
 Result GetCurrentPrimaryIpAddress(in_addr *) { return NotConnected(); }
 Result GetCurrentIpConfigInfo(in_addr *, in_addr *, in_addr *, in_addr *, in_addr *) { return NotConnected(); }
 Result GetCurrentProxySetting(ProxySetting *) { return NotConnected(); }

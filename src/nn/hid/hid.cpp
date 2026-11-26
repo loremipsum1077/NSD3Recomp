@@ -1,3 +1,4 @@
+#include <cstring>
 // nn::hid: controllers.
 //
 // The port presents one controller: a Pro Controller in the first player slot, fed
@@ -68,7 +69,21 @@ struct SixAxisSensorHandle;
 struct VibrationDeviceHandle;
 struct VibrationDeviceInfo;
 struct VibrationValue;
-struct ControllerSupportArg;
+// The controller-applet arguments (0x430 bytes in the SDK 2.7.7 links). Only the
+// defaults are needed: the applet itself is not shown (ShowControllerSupport below).
+struct ControllerSupportArg {
+    unsigned char bytes[0x430];
+    void SetDefault();
+};
+void ControllerSupportArg::SetDefault()
+{
+    memset(bytes, 0, sizeof(bytes));
+    bytes[0x00] = 0;   // playerCountMin
+    bytes[0x01] = 4;   // playerCountMax
+    bytes[0x02] = 1;   // enableTakeOverConnection
+    bytes[0x03] = 1;   // enableLeftJustify
+    bytes[0x04] = 1;   // enablePermitJoyDual
+}
 enum NpadJoyHoldType { NpadJoyHoldType_Vertical, NpadJoyHoldType_Horizontal };
 
 void InitializeNpad() {}

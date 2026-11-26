@@ -66,11 +66,22 @@ set_target_properties(d3_platform PROPERTIES CXX_STANDARD 17)
 # written out as C from the player's own dump. The output is game content and stays
 # in the build directory.
 set(D3_EXTRACTED "${CMAKE_BINARY_DIR}/generated/extracted_data.c")
-if(EXISTS "${D3_GAME_DIR}/exefs/main" AND EXISTS "${D3_GAME_DIR}/romfs/DiabloIIINX64r.nss")
+# A game version without a debug file (2.7.7): symbol names and addresses from the
+# decomp's data/<version> folder, and data sizes from the 2.6.2 debug file where known.
+set(D3_SYMBOLS_CSV "" CACHE PATH "Decomp data/<version> folder to use instead of the dump's debug file")
+set(D3_SIZE_HINTS "" CACHE FILEPATH "Another version's DiabloIIINX64r.nss, for data sizes")
+set(_extract_args)
+if(D3_SYMBOLS_CSV)
+    list(APPEND _extract_args --symbols-csv "${D3_SYMBOLS_CSV}")
+    if(D3_SIZE_HINTS)
+        list(APPEND _extract_args --size-hints "${D3_SIZE_HINTS}")
+    endif()
+endif()
+if(EXISTS "${D3_GAME_DIR}/exefs/main" AND (D3_SYMBOLS_CSV OR EXISTS "${D3_GAME_DIR}/romfs/DiabloIIINX64r.nss"))
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_custom_command(OUTPUT "${D3_EXTRACTED}"
         COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/tools/extract_data.py"
-                --game "${D3_GAME_DIR}" --out "${D3_EXTRACTED}"
+                --game "${D3_GAME_DIR}" --out "${D3_EXTRACTED}" ${_extract_args}
                 --skip-defined-in "${CMAKE_BINARY_DIR}/decomp_objects.txt"
         DEPENDS tools/extract_data.py config/extract_symbols.txt "${D3_GAME_DIR}/exefs/main"
                 $<TARGET_OBJECTS:d3_decomp>

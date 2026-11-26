@@ -45,6 +45,12 @@ bool operator==(const LanguageCode & left, const LanguageCode & right)
     return strncmp(left.string, right.string, sizeof(left.string)) == 0;
 }
 
+// Newer SDKs (Diablo III 2.7.7) compare a code with a language directly.
+bool operator==(const LanguageCode & left, const Language & right)
+{
+    return left == LanguageCode::Make(right);
+}
+
 }}  // namespace nn::settings
 
 namespace nn { namespace oe {
@@ -52,6 +58,11 @@ namespace nn { namespace oe {
 enum OperationMode { OperationMode_Handheld = 0, OperationMode_Console = 1 };
 enum PerformanceMode { PerformanceMode_Invalid = -1, PerformanceMode_Normal = 0, PerformanceMode_Boost = 1 };
 enum FocusState { FocusState_InFocus = 1, FocusState_OutOfFocus = 2, FocusState_Background = 3 };
+enum CpuBoostMode { CpuBoostMode_Normal = 0, CpuBoostMode_FastLoad = 1 };
+
+// 2.7.7 raises the CPU clock during loads. A desktop has nothing to switch.
+void SetCpuBoostMode(CpuBoostMode) {}
+
 enum FocusHandlingMode { FocusHandlingMode_Suspend, FocusHandlingMode_Notify, FocusHandlingMode_SuspendAndNotify, FocusHandlingMode_InFocusOnly };
 
 OperationMode GetOperationMode()
