@@ -98,7 +98,7 @@ def cheats_status():
 
 
 # What the page may ask the game to do (src/mods/cheats.cpp reads the same lines).
-CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?)$")
+CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10})$")
 
 
 def current_values():
@@ -205,6 +205,8 @@ PAGE = r"""<!doctype html>
   <button data-cheat="level 70">Level 70</button>
   <input type="text" inputmode="numeric" id="paragon" value="100" aria-label="Paragon levels to add" style="width:80px">
   <button id="addparagon">Add paragon levels</button>
+  <input type="text" inputmode="numeric" id="gold" value="10000000" aria-label="Gold to add" style="width:110px">
+  <button id="addgold">Add gold</button>
 </div>
 <div class="row">
   <input type="search" id="itemsearch" placeholder="Find an item: name or type" aria-label="Find an item" style="flex:1;min-width:220px">
@@ -232,7 +234,7 @@ PAGE = r"""<!doctype html>
   <tr><td>ZR</td><td><kbd>4</kbd></td></tr>
   <tr><td>+ (plus)</td><td><kbd>Tab</kbd></td></tr>
   <tr><td>&minus; (minus)</td><td><kbd>Backspace</kbd></td></tr>
-  <tr><td>Cheats mod: level 70 / +100 paragon</td><td><kbd>F1</kbd> <kbd>F2</kbd></td></tr>
+  <tr><td>Cheats mod: level 70 / +100 paragon / +10 million gold</td><td><kbd>F1</kbd> <kbd>F2</kbd> <kbd>F3</kbd></td></tr>
 </table>
 <p class="note">This page runs on your computer only. Closing it stops the helper program; a game you started keeps running.</p>
 </main><script>
@@ -286,7 +288,7 @@ function drawCheats(s) {
   if (!cheatsShown) { cheatsShown = true; loadItems(); }
   const st = s.cheat_status, fresh = st && Date.now() / 1000 - st.updated < 10;
   $("cheatstate").textContent = !s.running && !fresh ? "Start the game and load a hero. Requests made now wait until you are in a game." :
-    fresh && st.in_game ? `In game: level ${st.level}, paragon ${st.paragon}.` : "Waiting for you to enter a game; requests wait until then.";
+    fresh && st.in_game ? `In game: level ${st.level}, paragon ${st.paragon}, gold ${(st.gold || 0).toLocaleString()}.` : "Waiting for you to enter a game; requests wait until then.";
   if (st && st.log) $("cheatlog").textContent = st.log.join("\n");
   if (items && !items.length && fresh) loadItems();
 }
@@ -295,6 +297,7 @@ $("cheats").addEventListener("click", e => {
   if (!b) return;
   if (b.dataset.cheat) cheat(b.dataset.cheat);
   else if (b.id === "addparagon") cheat(`paragon ${parseInt($("paragon").value, 10) || 0}`);
+  else if (b.id === "addgold") cheat(`gold ${parseInt($("gold").value, 10) || 0}`);
   else if (b.dataset.item) cheat(`item ${b.dataset.item}`);
 });
 ["itemsearch", "rarity", "current"].forEach(id => $(id).addEventListener("input", drawItems));
@@ -443,7 +446,13 @@ class Handler(BaseHTTPRequestHandler):
             if state["building"] or not game_path().exists():
                 return self.send({"error": "Build first."})
             if not game_running():
-                game = subprocess.Popen([str(game_path())], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                # The game's output, including the crash handler's call stack, goes to
+                # game.log in the build directory; the run before is kept as game.prev.log.
+                log = current_build() / "game.log"
+                if log.exists():
+                    log.replace(log.with_name("game.prev.log"))
+                with open(log, "wb") as out:
+                    game = subprocess.Popen([str(game_path())], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
             return self.send({"ok": True})
         return self.send({"error": "unknown"}, code=404)
 

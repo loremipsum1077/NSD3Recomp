@@ -5,11 +5,13 @@
 // functions quest scripts use (ExperienceGrantDirectly, ItemGiveToPlayer).
 //
 // Requests come from two places:
-//   F1 / F2 in the game window      level to the cap / add 100 paragon levels
+//   F1 / F2 / F3 in the game window level to the cap / add 100 paragon levels / add 10
+//                                   million gold
 //   <save>/cheats/commands.txt      written by the Mods page (tools/mods.py), one per line:
 //       level <n>          raise the hero to level n (at most the level cap)
 //       paragon <n>        add n paragon levels (needs the level cap)
 //       item <name> [n]    give n (default 1) of the item with that GameBalance name
+//       gold <n>           add n gold
 // The game answers in <save>/cheats/status.json and lists every item, with its in-game
 // name, in <save>/cheats/items.json for the page's item picker.
 #include "X/Common/ActorCommonData.h"
@@ -32,12 +34,14 @@ BOOL ExperienceGrantDirectly(ActorCommonData & tACDPlayer, const uint64 nExpGran
 
 extern "C" const char * d3_save_dir(void);  // src/nn/fs/fs.cpp
 extern "C" int d3_hotkeys_take(void);       // src/host/window.cpp
-enum { D3_HOTKEY_LEVEL_MAX = 1 << 0, D3_HOTKEY_PARAGON = 1 << 1 };
+enum { D3_HOTKEY_LEVEL_MAX = 1 << 0, D3_HOTKEY_PARAGON = 1 << 1, D3_HOTKEY_GOLD = 1 << 2 };
 
 namespace {
 
 const int kHotkeyParagonLevels = 100;
 const int kMaxItemCount = 50;
+const long long kHotkeyGold = 10000000;
+const long long kMaxGold = 100000000000LL;
 
 std::string Folder()
 {
@@ -196,6 +200,13 @@ void AddParagon(ActorCommonData & tACD, int nLevels)
     Say("paragon " + std::to_string(nStart) + " -> " + std::to_string(Paragon(tACD)));
 }
 
+void AddGold(ActorCommonData & tACD, long long nGold)
+{
+    nGold = std::max(0LL, std::min(nGold, kMaxGold));
+    tACD.ModifyCurrencyAmount(nGold, CURRENCY_GOLD, GMR_SCRIPT, FALSE);
+    Say("gold +" + std::to_string(nGold) + " -> " + std::to_string((long long)tACD.GetCurrencyAmount(CURRENCY_GOLD)));
+}
+
 void GiveItem(ACDID idACDPlayer, const char * szName, int nCount)
 {
     int nGiven = 0;
@@ -221,7 +232,12 @@ void Run(const char * szLine, ACDID idACDPlayer, ActorCommonData & tACD)
     char szWord[32] = {};
     char szName[128] = {};
     int nValue = 0;
-    if (sscanf(szLine, "level %d", &nValue) == 1)
+    long long nGold = 0;
+    if (sscanf(szLine, "gold %lld", &nGold) == 1)
+    {
+        AddGold(tACD, nGold);
+    }
+    else if (sscanf(szLine, "level %d", &nValue) == 1)
     {
         RaiseLevel(tACD, nValue);
     }
@@ -244,7 +260,8 @@ void WriteStatus(ActorCommonData * ptACD)
     std::string text = "{\n  \"in_game\": " + std::string(ptACD ? "true" : "false");
     if (ptACD)
     {
-        text += ",\n  \"level\": " + std::to_string(Level(*ptACD)) + ",\n  \"paragon\": " + std::to_string(Paragon(*ptACD));
+        text += ",\n  \"level\": " + std::to_string(Level(*ptACD)) + ",\n  \"paragon\": " + std::to_string(Paragon(*ptACD)) +
+                ",\n  \"gold\": " + std::to_string((long long)ptACD->GetCurrencyAmount(CURRENCY_GOLD));
     }
     text += ",\n  \"updated\": " + std::to_string((long long)time(NULL)) + ",\n  \"log\": [";
     for (size_t i = 0; i < gLog.size(); i++)
@@ -282,6 +299,11 @@ void D3ModCheatsUpdate()
     if (hotkeys & D3_HOTKEY_LEVEL_MAX)
     {
         RaiseLevel(*ptACD, 70);
+        changed = true;
+    }
+    if (hotkeys & D3_HOTKEY_GOLD)
+    {
+        AddGold(*ptACD, kHotkeyGold);
         changed = true;
     }
     if (hotkeys & D3_HOTKEY_PARAGON)

@@ -208,15 +208,16 @@ it offers are listed in `config/mods.json`.
   online parts of seasons stay unavailable. Turn it off with `-DD3_MOD_SEASON=`.
 - `-DD3_MOD_RUN_SPEED=2.0`: heroes walk, run and sprint at that multiple of the
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
-- `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70
-  and F2 adds 100 paragon levels. While the game runs, the Mods page's Cheats panel
-  can do the same and give any item, found by its in-game name. Everything goes
+- `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70,
+  F2 adds 100 paragon levels and F3 adds 10,000,000 gold. While the game runs, the Mods
+  page's Cheats panel can do the same, add any amount of gold, and give any item, found
+  by its in-game name. Everything goes
   through the game's own level-up and item code (`src/mods/cheats.cpp`), so it is
   saved with the hero like anything earned. The page and the game exchange small
   files in `<save folder>/cheats/`; if you start the game yourself with a different
   `D3_SAVE_DIR`, write commands to that folder's `cheats/commands.txt` instead
-  (`level 70`, `paragon 100`, `item Unique_Helm_002_p1`). Turn it off with
-  `-DD3_MOD_CHEATS=`.
+  (`level 70`, `paragon 100`, `gold 1000000`, `item Unique_Helm_002_p1`). Turn it off
+  with `-DD3_MOD_CHEATS=`.
 - `-DD3_MOD_MOUSE=1`: a mouse or trackpad alongside the controller. The Switch's menus
   only follow the controller, so the pointer drives them the same way: pointing at a
   menu entry selects it, a left click chooses it (A), and a click on a dialog's
@@ -224,6 +225,15 @@ it offers are listed in `config/mods.json`.
   toward the pointer (it tilts the left stick) and holding the right button holds A,
   the primary skill, which also talks, opens and picks up. Other skills stay on the
   keyboard or controller. `src/mods/mouse.cpp`; turn it off with `-DD3_MOD_MOUSE=`.
+- `-DD3_MOD_VENDOR=1`: Deckard Cain stands in New Tristram again, just up and to the
+  left of the waypoint, in the story and in adventure mode, and trades. He sells custom
+  legendary gems at their highest rank for 1,000,000 gold each. Each one is a copy of a
+  real gem, keeping its look and power, with a new name and one more power: every so
+  many kills while it is socketed in something you wear, you get a pylon's buff
+  (Conduit Shard: Conduit every 10 kills; Shard of Power: Power every 25; Quickening
+  Shard: Speed every 10). The gems are added to the game's item table as it loads, so
+  they are saved with the hero; a hero holding one needs this mod on to load. Add gems
+  in the table at the top of `src/mods/vendor.cpp`. Turn it off with `-DD3_MOD_VENDOR=`.
 
 ## Measuring progress
 

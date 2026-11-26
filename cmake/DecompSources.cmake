@@ -168,6 +168,39 @@ if(D3_MOD_MOUSE)
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/mouse.cpp")
 endif()
 
+# D3_MOD_VENDOR=1 puts Deckard Cain back in New Tristram as a vendor of custom legendary
+# gems, each with an extra power that fires every so many kills (src/mods/vendor.cpp).
+# Heroes holding those gems need the mod on to load.
+set(D3_MOD_VENDOR "" CACHE STRING "Mod: Deckard Cain sells custom gems in New Tristram; 1 to turn on, empty for off")
+if(D3_MOD_VENDOR)
+    message(STATUS "Mod: Cain's custom gems")
+    d3_patch_source("X/Server/SPlayer.cpp"
+        --replace "    ServerUpdateWasCalled(ptServerPlayerGlobals->tPlayerUpdateData)$<SEMICOLON>"
+                  "    ServerUpdateWasCalled(ptServerPlayerGlobals->tPlayerUpdateData)$<SEMICOLON> { void D3ModVendorUpdate()$<SEMICOLON> D3ModVendorUpdate()$<SEMICOLON> }")
+    d3_patch_source("X/Common/Definitions/GameBalanceDefinition.cpp"
+        --replace "        GBHeader * ptHeader = (GBHeader *)((uint8 *)pTable + i * nSize)$<SEMICOLON>"
+                  "        if (i == 0) { void D3ModVendorExtendItems(GameBalanceDefinition *, int32 &, void *&)$<SEMICOLON> D3ModVendorExtendItems(pdefGB, nCount, pTable)$<SEMICOLON> } GBHeader * ptHeader = (GBHeader *)((uint8 *)pTable + i * nSize)$<SEMICOLON>")
+    d3_patch_source("X/Common/Definitions/StringListDefinition.cpp"
+        --replace "static LPCSTR sStringListFetchInternal(const SNO snoStringList, const CHAR * szLabel, BOOL & fFound) {"
+                  "LPCSTR D3ModVendorString(SNO, LPCSTR)$<SEMICOLON> static LPCSTR sStringListFetchInternal(const SNO snoStringList, const CHAR * szLabel, BOOL & fFound) { if (LPCSTR szMod = D3ModVendorString(snoStringList, szLabel)) { fFound = TRUE$<SEMICOLON> return szMod$<SEMICOLON> }")
+    d3_patch_source("X/Common/NPC.cpp"
+        --replace "    return ActorDefinitionGetTagMapValueInt(TAG_ACTOR_NPC_TRADE, tACD.snoActor)$<SEMICOLON>"
+                  "    { BOOL D3ModVendorIsVendor(const ActorCommonData &)$<SEMICOLON> if (D3ModVendorIsVendor(tACD)) return TRUE$<SEMICOLON> } return ActorDefinitionGetTagMapValueInt(TAG_ACTOR_NPC_TRADE, tACD.snoActor)$<SEMICOLON>")
+    d3_patch_source("X/Server/LuaScript/ScriptEvent.cpp"
+        --replace "    ScriptEventDispatchEvent(EVENT_ACTOR_KILLED, &tEventDefParams, NULL, NULL, 0.0f, ACDID_INVALID)$<SEMICOLON>"
+                  "    { void D3ModVendorOnKill(ACDID, ACDID)$<SEMICOLON> D3ModVendorOnKill(idACDActor, ACDGetControllingActor(idACDKiller))$<SEMICOLON> } ScriptEventDispatchEvent(EVENT_ACTOR_KILLED, &tEventDefParams, NULL, NULL, 0.0f, ACDID_INVALID)$<SEMICOLON>")
+    d3_patch_source("X/Common/ActorInventory.cpp"
+        --replace "    if (bNPC && bMerchant)"
+                  "    BOOL D3ModVendorIsMerchantActor(const ActorCommonData &)$<SEMICOLON> if ((bNPC && bMerchant) || D3ModVendorIsMerchantActor(tACD))")
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/vendor.cpp")
+    # 2.7.7's jewel upgrade takes the item's owner as well; 2.6.2's does not.
+    file(READ "${_src}/X/Server/SItems.cpp" _sitems)
+    string(FIND "${_sitems}" "SItemUpgradeJewel(ActorCommonData & tACDItem, int32 nUpgradeRanks, ActorCommonData & tACDOwner)" _owner)
+    if(_owner GREATER -1)
+        set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/vendor.cpp" PROPERTIES COMPILE_DEFINITIONS D3_VENDOR_UPGRADE_HAS_OWNER=1)
+    endif()
+endif()
+
 add_library(d3_decomp OBJECT EXCLUDE_FROM_ALL ${D3_DECOMP_SOURCES})
 get_property(_patched_sources GLOBAL PROPERTY D3_PATCHED_SOURCES)
 foreach(_entry IN LISTS _patched_sources)

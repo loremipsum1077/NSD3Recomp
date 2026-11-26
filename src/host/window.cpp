@@ -3,7 +3,7 @@
 // Keyboard: W A S D left stick, I J K L right stick, arrow keys d-pad,
 //   Space or Return = A, Escape = B, Q = Y, E = X, Tab = Plus, Backspace = Minus,
 //   1 = L, 2 = R, 3 = ZL, 4 = ZR.
-//   F1 and F2 are the Cheats mod's hotkeys (d3_hotkeys_take).
+//   F1, F2 and F3 are the Cheats mod's hotkeys (d3_hotkeys_take).
 // Mouse: queued for the Mouse mod (d3_mouse_take), which hands it to the game.
 // Game controllers map by position: the right-hand face button is always the
 // Switch's A, whatever letter is printed on it.
@@ -349,10 +349,13 @@ int d3_window_pump(void)
             g_quit = true;
             break;
         case SDL_KEYDOWN:
-            if (!e.key.repeat && (e.key.keysym.scancode == SDL_SCANCODE_F1 || e.key.keysym.scancode == SDL_SCANCODE_F2))
+            if (!e.key.repeat && (e.key.keysym.scancode == SDL_SCANCODE_F1 || e.key.keysym.scancode == SDL_SCANCODE_F2 ||
+                                    e.key.keysym.scancode == SDL_SCANCODE_F3))
             {
                 pthread_mutex_lock(&g_lock);
-                g_hotkeys |= e.key.keysym.scancode == SDL_SCANCODE_F1 ? D3_HOTKEY_LEVEL_MAX : D3_HOTKEY_PARAGON;
+                g_hotkeys |= e.key.keysym.scancode == SDL_SCANCODE_F1   ? D3_HOTKEY_LEVEL_MAX
+                             : e.key.keysym.scancode == SDL_SCANCODE_F2 ? D3_HOTKEY_PARAGON
+                                                                        : D3_HOTKEY_GOLD;
                 pthread_mutex_unlock(&g_lock);
             }
             break;
