@@ -6,8 +6,13 @@
 It serves one page on this computer only (127.0.0.1) and opens it in the browser.
 The mods are listed in config/mods.json; each is a CMake option of this project
 (see cmake/DecompSources.cmake). Ticking a box and pressing Build runs the same two
-commands you would type: `cmake --preset macos -D<option>=<value> ...` and
-`cmake --build build/macos`. The page stops this program when it is closed.
+commands you would type: `cmake -B build/<name> -D<option>=<value> ...` (or
+`cmake --preset macos ...` for a build directory not configured yet) and
+`cmake --build build/<name>`. The page stops this program when it is closed.
+
+Every configured build directory under build/ (one per game version, such as
+build/macos for 2.6.2 and build/macos-277 for 2.7.7) can be chosen on the page;
+--build picks the one selected at start.
 """
 import argparse
 import json
@@ -23,12 +28,11 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-BUILD = ROOT / "build" / "macos"
-GAME = BUILD / "d3"
+DEFAULT_BUILD = ROOT / "build" / "macos"
 TOKEN = secrets.token_urlsafe(16)
 
 lock = threading.Lock()
-state = {"log": [], "building": False, "result": "", "last_seen": time.time(), "seen": False}
+state = {"log": [], "building": False, "result": "", "last_seen": time.time(), "seen": False, "build": DEFAULT_BUILD}
 game = None
 
 
@@ -36,11 +40,51 @@ def mods():
     return json.loads((ROOT / "config" / "mods.json").read_text())
 
 
+def cache_text(build_dir):
+    cache = build_dir / "CMakeCache.txt"
+    return cache.read_text(errors="replace") if cache.exists() else ""
+
+
+def builds():
+    """Build directories that can be chosen: every configured one with a game folder
+    set, plus the preset's directory even before it is first configured."""
+    found = {}
+    for cache in sorted((ROOT / "build").glob("*/CMakeCache.txt")):
+        text = cache.read_text(errors="replace")
+        game_dir = re.search(r"^D3_GAME_DIR:[A-Z]+=(.*)$", text, re.M)
+        if game_dir and game_dir.group(1):
+            found[cache.parent] = game_dir.group(1)
+    found.setdefault(DEFAULT_BUILD, "")
+    result = []
+    for path, game_dir in found.items():
+        try:
+            shown = str(pathlib.Path(game_dir).relative_to(ROOT)) if game_dir else "game"
+        except ValueError:
+            shown = game_dir
+        result.append({"id": path.name, "label": f"build/{path.name} (game files: {shown})"})
+    return result
+
+
+def pick_build(name):
+    for b in builds():
+        if b["id"] == name:
+            return ROOT / "build" / name
+    return None
+
+
+def current_build():
+    with lock:
+        return state["build"]
+
+
+def game_path():
+    return current_build() / "d3"
+
+
 def current_values():
     """What the build directory is configured with now."""
     values = {}
-    cache = BUILD / "CMakeCache.txt"
-    text = cache.read_text() if cache.exists() else ""
+    text = cache_text(current_build())
     for m in mods():
         found = re.search(rf"^{re.escape(m['id'])}:[A-Z]+=(.*)$", text, re.M)
         values[m["id"]] = found.group(1) if found else ""
@@ -52,10 +96,14 @@ def say(line):
         state["log"].append(line.rstrip("\n"))
 
 
-def build(values):
+def build(build_dir, values):
     try:
         args = [f"-D{k}={v}" for k, v in values.items()]
-        for command in (["cmake", "--preset", "macos"] + args, ["cmake", "--build", "build/macos"]):
+        relative = str(build_dir.relative_to(ROOT))
+        # An existing build directory keeps its own settings (decomp, game files);
+        # only one not configured yet needs the preset.
+        configure = ["cmake", "-B", relative] if cache_text(build_dir) else ["cmake", "--preset", "macos"]
+        for command in (configure + args, ["cmake", "--build", relative]):
             say("$ " + " ".join(command))
             p = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
             for line in p.stdout:
@@ -116,6 +164,8 @@ PAGE = r"""<!doctype html>
 </style></head><body><main>
 <h1>Mods</h1>
 <p class="sub">Tick what you want, then build. Nothing ticked builds the game exactly as it shipped.</p>
+<div class="mod" id="versionbox" hidden><label for="version">Game version</label><select id="version" style="width:auto"></select>
+  <p>Which build directory to build and start. Each has its own decomp, game files and mods.</p></div>
 <form id="mods"></form>
 <div class="row">
   <button class="primary" id="build">Build</button>
@@ -145,7 +195,7 @@ PAGE = r"""<!doctype html>
 </main><script>
 const T = new URLSearchParams(location.search).get("t");
 const $ = id => document.getElementById(id);
-let mods = [], shown = 0, drawn = false;
+let mods = [], shown = 0, drawn = false, drawnBuild = null;
 function field(m, value) {
   const on = value !== "";
   const v = on ? value : m.default;
@@ -166,11 +216,15 @@ async function poll() {
   let s;
   try { s = await (await fetch(`/state?t=${T}&from=${shown}`)).json(); }
   catch (e) { $("status").textContent = "The helper program has stopped. Run Mods.command again."; $("status").className = "bad"; return; }
-  if (!drawn) {
+  if (!drawn || s.build !== drawnBuild) {
     mods = s.mods;
     $("mods").innerHTML = mods.map(m => field(m, s.values[m.id] || "")).join("");
-    $("mods").addEventListener("change", sync); sync(); drawn = true;
+    if (!drawn) $("mods").addEventListener("change", sync);
+    sync(); drawn = true; drawnBuild = s.build;
+    $("version").innerHTML = s.builds.map(b => `<option value="${b.id}"${b.id === s.build ? " selected" : ""}>${b.label}</option>`).join("");
+    $("versionbox").hidden = s.builds.length < 2;
   }
+  $("version").disabled = s.building || s.running;
   if (s.lines.length) {
     const log = $("log");
     log.textContent += s.lines.join("\n") + "\n"; shown += s.lines.length; log.scrollTop = log.scrollHeight;
@@ -190,6 +244,10 @@ $("build").addEventListener("click", async e => {
   const values = {};
   document.querySelectorAll("[data-c]").forEach(c => { values[c.dataset.c] = c.checked ? document.querySelector(`[data-v="${c.dataset.c}"]`).value.trim() : ""; });
   const r = await (await fetch(`/build?t=${T}`, {method: "POST", body: JSON.stringify(values)})).json();
+  if (r.error) { $("status").textContent = r.error; $("status").className = "bad"; }
+});
+$("version").addEventListener("change", async e => {
+  const r = await (await fetch(`/select?t=${T}`, {method: "POST", body: JSON.stringify({build: e.target.value})})).json();
   if (r.error) { $("status").textContent = r.error; $("status").className = "bad"; }
 });
 $("play").addEventListener("click", async e => {
@@ -228,7 +286,8 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 state["last_seen"], state["seen"] = time.time(), True
                 body = {"lines": state["log"][start:], "building": state["building"], "result": state["result"]}
-            body.update(mods=mods(), values=current_values(), built=GAME.exists(), running=game_running())
+            body.update(mods=mods(), values=current_values(), built=game_path().exists(), running=game_running(),
+                        builds=builds(), build=current_build().name)
             return self.send(body)
         return self.send(PAGE.encode(), "text/html; charset=utf-8")
 
@@ -255,13 +314,27 @@ class Handler(BaseHTTPRequestHandler):
                 if state["building"]:
                     return self.send({"error": "A build is already running."})
                 state["building"], state["result"] = True, ""
-            threading.Thread(target=build, args=(values,), daemon=True).start()
+            threading.Thread(target=build, args=(current_build(), values), daemon=True).start()
+            return self.send({"ok": True})
+        if self.path.startswith("/select"):
+            try:
+                chosen = pick_build(str(json.loads(body or b"{}").get("build", "")))
+            except ValueError:
+                chosen = None
+            if chosen is None:
+                return self.send({"error": "unknown build directory"}, code=400)
+            if game_running():
+                return self.send({"error": "Close the game before switching versions."})
+            with lock:
+                if state["building"]:
+                    return self.send({"error": "Wait for the build to finish."})
+                state["build"], state["result"] = chosen, ""
             return self.send({"ok": True})
         if self.path.startswith("/play"):
-            if state["building"] or not GAME.exists():
+            if state["building"] or not game_path().exists():
                 return self.send({"error": "Build first."})
             if not game_running():
-                game = subprocess.Popen([str(GAME)], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                game = subprocess.Popen([str(game_path())], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             return self.send({"ok": True})
         return self.send({"error": "unknown"}, code=404)
 
@@ -270,7 +343,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--port", type=int, default=0, help="port to serve on (default: any free one)")
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
+    ap.add_argument("--build", metavar="NAME", help="build directory under build/ to select at start, such as macos-277")
     args = ap.parse_args()
+    if args.build:
+        chosen = pick_build(args.build)
+        if chosen is None:
+            ap.error(f"build/{args.build} is not a configured build directory")
+        state["build"] = chosen
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}"
     print(f"Mods page: {url}\nClose the page (or press Ctrl-C here) to stop.", flush=True)
