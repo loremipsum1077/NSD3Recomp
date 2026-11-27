@@ -357,6 +357,21 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   seconds per item) to cast that skill from the hero. Corrupting the item again rerolls
   the skill. A hero holding a corrupted item needs this mod on to load. The skills are
   listed at the top of `src/mods/corrupt.cpp`. Turn it off with `-DD3_MOD_CORRUPT=`.
+- `-DD3_MOD_LOAD_WORLD=X1_TEST_ChallengeTestWorld`: skip the menus and start in a
+  developer test world that ships with the game but can't be reached in normal play
+  (`X1_TEST_ChallengeTestWorld`, or `Axe FlatWorld`, a flat test map; any world's SNO
+  name works). The game's own developer loader makes a throwaway account and hero for it,
+  so your heroes are not loaded or changed. `D3_LOAD_WORLD=<name>` overrides it when
+  starting the game (empty for the menus). `src/mods/dev.cpp`; turn it off with
+  `-DD3_MOD_LOAD_WORLD=`.
+- `-DD3_MOD_BLIZZCON=1`: the BlizzCon show-floor demo, as `-blizzcon` starts it: an
+  offline party of level-70 demo heroes, and Continue goes straight into a Greater Rift.
+  Your own heroes are not changed (the game's settings file may be). The demo's title
+  screen loaded fewer UI files than 2.7.7's game screens need, so the mod loads the usual
+  set. Turn it off with `-DD3_MOD_BLIZZCON=`.
+- Test items: with the cheats on, the Cheats tab's item picker also lists the items
+  Blizzard marked test-only or art-test (`ThorTest_Mojo`, `Sword_1H_PvP_70`,
+  `Art_Test_Bow_1`, the 4v4 PvP amulets and about 400 more). Most have no in-game name.
 
 ## Measuring progress
 

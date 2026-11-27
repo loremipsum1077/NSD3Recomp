@@ -317,5 +317,31 @@
     "type": "toggle",
     "default": "1",
     "pattern": "^1$"
+  },
+  {
+    "id": "D3_MOD_LOAD_WORLD",
+    "title": "Start in a developer world",
+    "group": "Developer",
+    "description": "Skip the menus and start in one of the test worlds Blizzard's developers used, which ship with the game but can't be reached in normal play. The game makes a throwaway developer account and hero for it; your own heroes aren't loaded or changed. Turn it off to play normally again.",
+    "type": "choice",
+    "default": "X1_TEST_ChallengeTestWorld",
+    "pattern": "^(X1_TEST_ChallengeTestWorld|Axe FlatWorld)$",
+    "choices": [
+      "X1_TEST_ChallengeTestWorld",
+      "Axe FlatWorld"
+    ],
+    "labels": [
+      "Challenge Test World",
+      "Axe FlatWorld (flat test map)"
+    ]
+  },
+  {
+    "id": "D3_MOD_BLIZZCON",
+    "title": "BlizzCon demo",
+    "group": "Developer",
+    "description": "Start the game the way the BlizzCon show-floor demo did: an offline party of level-70 demo heroes, and Continue goes straight into a Greater Rift. Your own heroes aren't changed. Turn it off to play normally again.",
+    "type": "toggle",
+    "default": "1",
+    "pattern": "^1$"
   }
 ]

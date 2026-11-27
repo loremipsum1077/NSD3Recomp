@@ -177,6 +177,33 @@ if(D3_MOD_CHEATS)
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/cheats.cpp")
 endif()
 
+# Developer starts (src/mods/dev.cpp), which the release still has the code for:
+# D3_MOD_LOAD_WORLD=<world name> skips the menus and starts a local game in that world with a
+# developer account, as Blizzard's developer builds could; D3_MOD_BLIZZCON=1 starts the
+# BlizzCon demo (level-70 demo heroes, straight into a Greater Rift), as -blizzcon does. The
+# demo's title screen loads fewer UI files than 2.7.7's game screens need, so it is given
+# the usual set.
+set(D3_MOD_LOAD_WORLD "" CACHE STRING "Mod: start straight into this world (an SNO name); empty for the menus")
+set(D3_MOD_BLIZZCON "" CACHE STRING "Mod: the BlizzCon demo; 1 to turn on, empty for off")
+if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON)
+    set(_dev_defs "D3_MOD_LOAD_WORLD=\"${D3_MOD_LOAD_WORLD}\"")
+    if(D3_MOD_LOAD_WORLD)
+        message(STATUS "Mod: start in world ${D3_MOD_LOAD_WORLD}")
+    endif()
+    if(D3_MOD_BLIZZCON)
+        message(STATUS "Mod: BlizzCon demo")
+        list(APPEND _dev_defs "D3_MOD_BLIZZCON=1")
+        d3_patch_source("X/Client/UserInterface/UI.cpp"
+            --replace "        if (CmdLineGetParams()->tBitArray.Test(CMDLINE_BLIZZCON_BIT))"
+                      "        if (false)")
+    endif()
+    d3_patch_source("X/Common/Shell/MainNX64.cpp"
+        --replace "    if (gtCmdLineParams.eTestType != TESTTYPE_NONE)"
+                  "    { void D3ModDevStartup(CmdLineParams &)$<SEMICOLON> D3ModDevStartup(gtCmdLineParams)$<SEMICOLON> } if (gtCmdLineParams.eTestType != TESTTYPE_NONE)")
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/dev.cpp")
+    set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/dev.cpp" PROPERTIES COMPILE_DEFINITIONS "${_dev_defs}")
+endif()
+
 # D3_MOD_MOUSE=1 lets the mouse play alongside the controller (src/mods/mouse.cpp): it
 # selects and presses menu entries and dialog buttons, and walks the hero toward the
 # pointer. Each input update first hands the window's mouse events to the mod.
