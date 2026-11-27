@@ -359,7 +359,7 @@ endif()
 # defaults of the cvars the lobby would have set; the buffs go to the season theme mod.
 set(D3_MOD_EVENTS "" CACHE STRING "Mod: events (Anniversary, CowLevel, DoubleBloodShards, DoubleRiftKeystones, WorldBoss; comma-separated); empty for off")
 set(D3_MOD_WORLD_BOSS_MINUTES "10" CACHE STRING "Mod: minutes between world bosses (with D3_MOD_EVENTS=WorldBoss)")
-set(_theme_keys "${D3_MOD_THEME}")
+set(_theme_event_keys "")  # the events' buffs, kept on whatever the theme
 if(D3_MOD_EVENTS)
     string(REPLACE "," ";" _events "${D3_MOD_EVENTS}")
     foreach(_event IN LISTS _events)
@@ -372,11 +372,7 @@ if(D3_MOD_EVENTS)
             d3_patch_source("X/Common/CommunityBuffs.cpp"
                 --replace "\"EasterEggWorldEnabled\", false)" "\"EasterEggWorldEnabled\", true)")
         elseif(_event MATCHES "^(DoubleBloodShards|DoubleRiftKeystones)$")
-            if(_theme_keys)
-                string(APPEND _theme_keys ",${_event}")
-            else()
-                set(_theme_keys "${_event}")
-            endif()
+            list(APPEND _theme_event_keys "${_event}")
         elseif(_event STREQUAL "WorldBoss")
             if(NOT D3_MOD_WORLD_BOSS_MINUTES MATCHES "^[1-9][0-9]*$")
                 message(FATAL_ERROR "D3_MOD_WORLD_BOSS_MINUTES must be a whole number of minutes, got '${D3_MOD_WORLD_BOSS_MINUTES}'")
@@ -398,21 +394,25 @@ endif()
 # community buffs that Blizzard's lobby switched on from its Config.txt; the value is the
 # list of buff names it would have sent (CommunityBuff<Name> "1"), comma-separated, e.g.
 # "SoulShards" or "ShadowClones,FourthKanaisCubeSlot". "Season" stands for the theme of the
-# season D3_MOD_SEASON makes active (a table in theme.cpp). The buffs apply to every hero.
-set(D3_MOD_THEME "" CACHE STRING "Mod: season theme (community buff names, comma-separated, or Season); empty for off")
-if(_theme_keys)
-    if(NOT _theme_keys MATCHES "^[A-Za-z]+(,[A-Za-z]+)*$")
+# season D3_MOD_SEASON makes active (a table in theme.cpp); "Pick" starts with none. The
+# buffs apply to every hero. With the mod on, the theme can also be switched while the game
+# runs, from the Mods page's Season theme tab or the designer menu (F8), to any season's.
+set(D3_MOD_THEME "" CACHE STRING "Mod: season theme (community buff names, comma-separated, Season, or Pick); empty for off")
+if(D3_MOD_THEME OR _theme_event_keys)
+    if(D3_MOD_THEME AND NOT D3_MOD_THEME MATCHES "^[A-Za-z]+(,[A-Za-z]+)*$")
         message(FATAL_ERROR "D3_MOD_THEME must be buff names separated by commas, got '${D3_MOD_THEME}'")
     endif()
+    set(_theme_keys "${D3_MOD_THEME}")
+    string(REPLACE ";" "," _theme_event_keys "${_theme_event_keys}")
     set(_theme_season 0)
     if(D3_MOD_SEASON)
         set(_theme_season ${D3_MOD_SEASON})
     endif()
-    message(STATUS "Mod: season theme ${_theme_keys}")
+    message(STATUS "Mod: season theme ${_theme_keys} ${_theme_event_keys}")
     list(APPEND D3_SHARED_HOOKS THEME)  # update
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/theme.cpp")
     set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/theme.cpp" PROPERTIES COMPILE_DEFINITIONS
-        "D3_MOD_THEME_KEYS=\"${_theme_keys}\";D3_MOD_THEME_SEASON=${_theme_season}")
+        "D3_MOD_THEME_KEYS=\"${_theme_keys}\";D3_MOD_THEME_EVENT_KEYS=\"${_theme_event_keys}\";D3_MOD_THEME_SEASON=${_theme_season}")
 endif()
 
 # D3_MOD_CHALLENGE turns on challenge rifts offline (src/mods/challenge.cpp). The game

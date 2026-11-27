@@ -9,7 +9,8 @@
 // Music pages fill themselves from game data, as the release's code does.
 //
 // A selected entry's command goes to D3ModDesignerCommand: "cheat <line>" runs a cheats-page
-// command (when D3_MOD_CHEATS is built), "dev <view>" toggles a developer view, anything else
+// command (when D3_MOD_CHEATS is built), "theme <request>" switches the season theme (when
+// D3_MOD_THEME is built), "dev <view>" toggles a developer view, anything else
 // (the Quest and Music pages' original console commands) is only logged.
 
 #include "X/Client/CPlayer.h"
@@ -17,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 void D3ModCheatsQueue(const char * szLine) __attribute__((weak));  // src/mods/cheats.cpp
+void D3ModThemeRequest(const char * szRequest) __attribute__((weak));  // src/mods/theme.cpp
 extern UIID UIDLG_CONSOLEDESIGNERMENU_CHARACTER;  // X/Client/UserInterface/UIGlobals.cpp
 extern UIID UIDLG_CONSOLEDESIGNERMENU_GAME;
 extern UIID UIDLG_CONSOLEDESIGNERMENU_CONSOLE;
@@ -50,6 +52,19 @@ static void D3ModDesignerCommand(LPCSTR szCommand)
         else
         {
             fprintf(stderr, "designer: %s (build with D3_MOD_CHEATS to run it)\n", szCommand + 6);
+        }
+        return;
+    }
+    if (strncmp(szCommand, "theme ", 6) == 0)
+    {
+        if (D3ModThemeRequest)
+        {
+            D3ModThemeRequest(szCommand + 6);
+            fprintf(stderr, "designer: %s\n", szCommand);
+        }
+        else
+        {
+            fprintf(stderr, "designer: %s (build with D3_MOD_THEME to switch themes)\n", szCommand);
         }
         return;
     }
@@ -224,6 +239,33 @@ void GameListDataSource::Initialize()
     sAdd(m_consoleCommandOptionItems, "Spawn Rime (ice Morlu)", "cheat spawn X1_LR_Boss_MorluSpellcaster_Ice boss");
     sAdd(m_consoleCommandOptionItems, "Spawn a champion pack", "cheat spawn X1_LR_Boss_MorluSpellcaster_Ice champion");
     sAdd(m_consoleCommandOptionItems, "Spawn a rare", "cheat spawn X1_LR_Boss_MorluSpellcaster_Ice rare");
+    // Season themes (src/mods/theme.cpp): the first season of each, and off.
+    if (D3ModThemeRequest)
+    {
+        static LPCSTR const arThemes[][2] = {
+            {"Theme: off", "theme off"},
+            {"Theme: build's default", "theme default"},
+            {"Theme 14: double goblins", "theme 14"},
+            {"Theme 15: double bounty caches", "theme 15"},
+            {"Theme 16: Royal Grandeur", "theme 16"},
+            {"Theme 17: Legacy of Nightmares", "theme 17"},
+            {"Theme 18: Triune's Will", "theme 18"},
+            {"Theme 19: Pandemonium", "theme 19"},
+            {"Theme 20: Kanai's powers", "theme 20"},
+            {"Theme 21: Trials of the Tempests", "theme 21"},
+            {"Theme 22: shadow clones, 4th cube slot", "theme 22"},
+            {"Theme 24: ethereal items", "theme 24"},
+            {"Theme 25: soul shards", "theme 25"},
+            {"Theme 26: swarm rifts", "theme 26"},
+            {"Theme 27: sanctified items", "theme 27"},
+            {"Theme 28: Altar of Rites", "theme 28"},
+            {"Theme 29: nesting portals", "theme 29"},
+        };
+        for (size_t i = 0; i < sizeof(arThemes) / sizeof(arThemes[0]); i++)
+        {
+            sAdd(m_consoleCommandOptionItems, arThemes[i][0], arThemes[i][1]);
+        }
+    }
 }
 
 QuickToggleListDataSource::QuickToggleListDataSource() {}

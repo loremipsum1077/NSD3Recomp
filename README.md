@@ -274,6 +274,15 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   `ParagonCap`.
   The theme applies to every hero. With any theme on, the Altar of Rites and Visions of
   Enmity are on too, as in 2.7.7. Turn it off with `-DD3_MOD_THEME=`.
+
+  **Switching themes while you play.** With the mod on (`Pick` builds it with no theme at
+  the start), any season's theme can be put on at any time, on every hero in the game:
+  from the Mods page's **Season theme** tab, which lists seasons 14 to 37 with a Use button
+  each, or from the designer menu's Game page (F8, with `D3_MOD_DEV_TOOLS`). The page
+  writes the request to `<save>/theme/request.txt`; the game takes the old theme's powers
+  off and puts the new ones on within a second, through the server's own perk code. The
+  choice is kept in `<save>/theme/theme.txt` for the next start; "The build's theme" goes
+  back to the `D3_MOD_THEME` value. Buffs from `D3_MOD_EVENTS` stay on whatever the theme.
 - `-DD3_MOD_EVENTS=Anniversary`: events Blizzard's servers ran, comma-separated.
   `Anniversary` opens the Darkening of Tristram (its portal is in New Tristram) and gives
   the anniversary buff; without it the dungeon still opens every January, from the game's

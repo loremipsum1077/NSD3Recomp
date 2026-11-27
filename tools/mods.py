@@ -125,6 +125,26 @@ def cheats_dir():
     return save_dir() / "cheats"
 
 
+def theme_dir():
+    return save_dir() / "theme"
+
+
+def read_json(path, fallback):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return fallback
+
+
+def theme_built(values):
+    events = values.get("D3_MOD_EVENTS", "")
+    return bool(values.get("D3_MOD_THEME")) or "DoubleBloodShards" in events or "DoubleRiftKeystones" in events
+
+
+# A season theme request (src/mods/theme.cpp reads the same): a season, off or default.
+THEME = re.compile(r"^(1[4-9]|2[0-9]|3[0-7]|off|default)$")
+
+
 def cheats_status():
     try:
         return json.loads((cheats_dir() / "status.json").read_text())
@@ -377,6 +397,12 @@ PAGE = r"""<!doctype html>
   #items .legendary { color:var(--leg); } #items .set { color:var(--set); }
   #items td:last-child { text-align:right; width:1%; }
   #items button { padding:3px 12px; font-size:13px; }
+  #themestate { padding:10px 14px; border-radius:10px; background:var(--raise); margin:0 0 16px; font-size:14px; }
+  #themes td.n { color:var(--dim); font:12px ui-monospace, Menlo, monospace; }
+  #themes td:last-child { text-align:right; width:1%; white-space:nowrap; }
+  #themes button { padding:3px 12px; font-size:13px; }
+  #themes tr.on td { background:var(--accent-soft); }
+  #themes tr.on td:first-child { box-shadow:inset 3px 0 var(--accent); }
   #cheatstate { padding:10px 14px; border-radius:10px; background:var(--raise); margin:0 0 16px; font-size:14px; }
   .controls { max-width:560px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card); }
   .controls th { position:static; }
@@ -387,6 +413,7 @@ PAGE = r"""<!doctype html>
   <nav role="tablist">
     <button role="tab" data-tab="mods" aria-selected="true">Mods</button>
     <button role="tab" data-tab="cheats" id="cheatstab" hidden>Cheats</button>
+    <button role="tab" data-tab="theme" id="themetab" hidden>Season theme</button>
     <button role="tab" data-tab="controls">Controls</button>
   </nav>
 </header>
@@ -430,6 +457,13 @@ PAGE = r"""<!doctype html>
   <p class="note" id="itemnote"></p>
   <h2>What the game did</h2>
   <pre id="cheatlog" aria-label="What the game did" style="height:140px"></pre>
+</section>
+
+<section data-panel="theme" id="theme" hidden>
+  <p id="themestate">Start the game to switch themes.</p>
+  <div class="row" style="display:flex; gap:8px; margin-bottom:12px"><button data-theme="off">No theme</button><button data-theme="default">The build's theme</button></div>
+  <div class="tablewrap"><table id="themes"></table></div>
+  <p class="note">The game switches within a second, on every hero in the game, and keeps the choice for the next start. With any theme on, the Altar of Rites and Visions of Enmity portals are on too, as in 2.7.7. Season 23's theme, followers that fight like heroes, is always on and has no switch.</p>
 </section>
 
 <section data-panel="controls" hidden>
@@ -652,6 +686,30 @@ $("cheats").addEventListener("click", e => {
 });
 ["itemsearch", "rarity", "current"].forEach(id => $(id).addEventListener("input", drawItems));
 
+// Season theme.
+let themesDrawn = false;
+function drawTheme(s) {
+  $("themetab").hidden = !s.theme;
+  if (!s.theme) { if (!$("theme").hidden) showTab("mods"); return; }
+  const st = s.theme_status, fresh = st && Date.now() / 1000 - st.updated < 15;
+  if (!themesDrawn && s.themes.length) {
+    themesDrawn = true;
+    $("themes").innerHTML = "<tr><th>Season</th><th>Theme</th><th>Buffs</th><th></th></tr>" + s.themes.map(t =>
+      `<tr data-season="${t.season}"><td>${t.season}</td><td>${esc(t.name)}</td><td class="n">${esc(t.buffs)}</td>` +
+      `<td><button data-theme="${t.season}">Use</button></td></tr>`).join("");
+  }
+  if (!s.themes.length) $("themes").innerHTML = "<tr><td>The list of themes appears once the game has started with this mod.</td></tr>";
+  document.querySelectorAll("#themes tr[data-season]").forEach(r => r.classList.toggle("on", !!st && String(st.season) === r.dataset.season));
+  $("themestate").textContent = st ? (st.message || "") + (s.running ? "" : " The game is not running; a request waits until it starts.") :
+    "Start the game to switch themes. A request made now waits until it starts.";
+}
+$("theme").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-theme]");
+  if (!b) return;
+  const r = await (await fetch(`/theme?t=${T}`, {method: "POST", body: JSON.stringify({request: b.dataset.theme})})).json();
+  $("themestate").textContent = r.error ? r.error : "Sent. The game switches within a second.";
+});
+
 // Build and play.
 async function poll() {
   let s;
@@ -661,7 +719,7 @@ async function poll() {
   if (!drawn || s.build !== drawnBuild) {
     mods = s.mods;
     drawMods(s.values);
-    if (drawn) { items = null; cheatsShown = false; }  // another build has its own save folder
+    if (drawn) { items = null; cheatsShown = false; themesDrawn = false; }  // another build has its own save folder
     drawn = true; drawnBuild = s.build;
     $("version").innerHTML = s.builds.map(b => `<option value="${esc(b.id)}"${b.id === s.build ? " selected" : ""}>${esc(b.label)}</option>`).join("");
     $("versionbox").hidden = s.builds.length < 2;
@@ -671,6 +729,7 @@ async function poll() {
   sync();
   $("version").disabled = s.building || s.running;
   drawCheats(s);
+  drawTheme(s);
   if (s.lines.length) {
     const log = $("log");
     log.textContent += s.lines.join("\n") + "\n"; shown += s.lines.length; log.scrollTop = log.scrollHeight;
@@ -738,6 +797,8 @@ class Handler(BaseHTTPRequestHandler):
             body.update(mods=mods(), values=values, built=game_path().exists(), running=game_running(),
                         builds=versions(), build=current_version(),
                         cheats=bool(values.get("D3_MOD_CHEATS")), cheat_status=cheats_status(),
+                        theme=theme_built(values), theme_status=read_json(theme_dir() / "status.json", None),
+                        themes=read_json(theme_dir() / "themes.json", []),
                         rules=[{"name": n, "title": t, "text": d, "normal": on} for n, t, d, on in RULES], rule_states=read_rules())
             return self.send(body)
         if self.path.startswith("/items"):
@@ -783,6 +844,19 @@ class Handler(BaseHTTPRequestHandler):
             folder.mkdir(parents=True, exist_ok=True)
             with open(folder / "commands.txt", "a") as f:
                 f.write(command + "\n")
+            return self.send({"ok": True})
+        if self.path.startswith("/theme"):
+            try:
+                request = str(json.loads(body or b"{}").get("request", "")).strip()
+            except (ValueError, AttributeError):
+                request = ""
+            if not THEME.match(request):
+                return self.send({"error": "That is not a season theme the game knows."}, code=400)
+            folder = theme_dir()
+            folder.mkdir(parents=True, exist_ok=True)
+            temporary = folder / "request.txt.tmp"
+            temporary.write_text(request + "\n")
+            temporary.replace(folder / "request.txt")
             return self.send({"ok": True})
         if self.path.startswith("/rules"):
             try:

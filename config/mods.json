@@ -163,12 +163,13 @@
   {
     "id": "D3_MOD_THEME",
     "title": "Season theme",
-    "description": "Turn on one of 2.7.7's season themes. On the Switch these were switched on by Blizzard's servers for the length of a season, so offline none ever start. The chosen season's theme follows the season chosen above (seasons 14 to 37; season 23's theme, followers that fight like heroes, is built into 2.7.7). The theme applies to every hero, seasonal or not. With any theme on, the Altar of Rites (season 28) and Visions of Enmity portals (season 29) are on too, as in 2.7.7.",
+    "description": "Turn on one of 2.7.7's season themes. On the Switch these were switched on by Blizzard's servers for the length of a season, so offline none ever start. The chosen season's theme follows the season chosen above (seasons 14 to 37; season 23's theme, followers that fight like heroes, is built into 2.7.7). The theme applies to every hero, seasonal or not. With any theme on, the Altar of Rites (season 28) and Visions of Enmity portals (season 29) are on too, as in 2.7.7. With this mod on, the theme can also be changed while the game runs, to any season's, from the Season theme tab on this page or the designer menu's Game page (F8, with the developer tools); the game keeps the choice for the next start.",
     "type": "choice",
     "default": "Season",
     "pattern": "^[A-Za-z]+(,[A-Za-z]+)*$",
     "choices": [
       "Season",
+      "Pick",
       "DoubleGoblins",
       "DoubleBountyBags",
       "RoyalGrandeur",
@@ -187,6 +188,7 @@
     ],
     "labels": [
       "Same as the season",
+      "None at the start (pick one in the game)",
       "Double treasure goblins (14)",
       "Double bounty caches (15)",
       "Royal Grandeur for everyone (16)",
