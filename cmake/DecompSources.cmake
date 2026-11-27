@@ -174,6 +174,10 @@ if(D3_MOD_CHEATS)
     d3_patch_source("X/Server/SGame.cpp"
         --replace "        LuaScriptUpdate()$<SEMICOLON>"
                   "        LuaScriptUpdate()$<SEMICOLON> { void D3ModCheatsUpdate()$<SEMICOLON> D3ModCheatsUpdate()$<SEMICOLON> }")
+    # The Mods page's game rules turn a game type's GameParamFlags on or off.
+    d3_patch_source("X/Common/Game.cpp"
+        --replace "    return (tGCD.tTemplate.uFlags >> eFlag) & 1$<SEMICOLON>"
+                  "    { unsigned long long D3ModRulesApply(unsigned long long)$<SEMICOLON> return (D3ModRulesApply(tGCD.tTemplate.uFlags) >> eFlag) & 1$<SEMICOLON> }")
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/cheats.cpp")
 endif()
 

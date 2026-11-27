@@ -136,6 +136,44 @@ def cheats_status():
 CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10}|cube|rifts ([1-9]|[1-9][0-9]|1[0-4][0-9]|150)|cache [1-5]( ([1-9]|1[0-9]|20))?|spawn [A-Za-z0-9_\-]{1,127}( (normal|champion|rare|boss))?)$")
 
 
+# Game rules: the game type's own switches (GameParamFlags) and two server switches, which
+# src/mods/cheats.cpp reads from rules.txt in the cheats folder while the game runs. Each is
+# (name, title, what it does, on in a normal game). Left out: saving heroes, forcing new
+# heroes and how actors reach the client (they lose or break saves), and the PvP-only ones.
+RULES = [
+    ("REVEAL_MINIMAP", "Reveal the minimap", "The whole minimap is drawn, explored or not.", False),
+    ("SHOW_MONSTER_HP_BARS", "Monster health bars", "A health bar over every monster, as in the PvP arenas.", False),
+    ("IGNORE_DURABILITY_LOSS", "No durability loss", "Gear never wears down.", False),
+    ("GRANT_GOLD_UPON_KILL", "Gold for every kill", "Each kill also pays gold straight to you, as in the old team deathmatch.", False),
+    ("RESTOCK_SHOPS_UPON_TALK", "Vendors restock on talk", "A vendor's stock is rolled again every time you talk to them.", False),
+    ("KEEP_ALL_SCENES_ACTIVE", "Keep the whole map running", "Every loaded area keeps simulating, not only the ones near you. Heavier; takes effect as areas load.", False),
+    ("RESURRECTION_DELAY", "Respawn timer", "Dying starts the PvP respawn countdown instead of the usual checkpoint rules.", False),
+    ("NO_EXPERIENCE", "No experience", "Kills and quests give no experience.", False),
+    ("LIMIT_WEAPON_EFFECTS", "Fewer weapon effects", "Weapons draw fewer of their glow and trail effects.", False),
+    ("NO_AREA_DAMAGE", "No Area Damage", "The Area Damage stat does nothing (a server switch).", False),
+    ("NO_DOT_AREA_DAMAGE", "No Area Damage from damage over time", "Damage over time no longer sets off Area Damage (a server switch).", False),
+    ("ALLOW_TOWN_PORTALS", "Town portals", "Off: Town Portal cannot be used.", True),
+    ("QUEST_UI", "Quest journal", "Off: the quest journal cannot be opened.", True),
+    ("CREATE_HEADSTONES_UPON_PLAYER_DEATH", "Headstones", "A headstone marks where a hero died.", True),
+    ("APPLY_RESURRECTION_BUFFS", "Resurrection buffs", "Coming back to life gives the usual short protective buffs.", True),
+    ("RESET_LIFE_STATS_UPON_LEVEL_UP", "Full health on level up", "Levelling up refills life and resource.", True),
+    ("ADJUST_EXP_WITH_RELATIVE_LEVEL", "Experience by level difference", "Off: monsters far below or above your level give full experience.", True),
+]
+RULE_NAMES = {r[0] for r in RULES}
+
+
+def read_rules():
+    found = {}
+    try:
+        for line in (cheats_dir() / "rules.txt").read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[0] in RULE_NAMES and parts[1] in ("on", "off"):
+                found[parts[0]] = parts[1]
+    except OSError:
+        pass
+    return found
+
+
 def current_values():
     """What the build directory is configured with now."""
     build_dir = current_build()
@@ -379,6 +417,9 @@ PAGE = r"""<!doctype html>
       <p class="hint">By its actor name, beside your hero. The default is Rime, the ice rift guardian of the BlizzCon 2017 rift.</p>
     </div>
   </div>
+  <h2>Game rules</h2>
+  <p class="hint">Switches each kind of game (the campaign, the PvP arenas, Challenge Rifts) is made with. They change while you play and are kept for later games; "Normal" leaves the game's own setting.</p>
+  <div class="tablewrap" style="max-height:none"><table id="rules"></table></div>
   <h2>Items</h2>
   <div class="finder">
     <input type="search" id="itemsearch" placeholder="Find an item: name or type" aria-label="Find an item">
@@ -578,7 +619,27 @@ function drawCheats(s) {
     fresh && st.in_game ? `In game: level ${st.level}, paragon ${st.paragon}, gold ${(st.gold || 0).toLocaleString()}.` : "Waiting for you to enter a game; requests wait until then.";
   if (st && st.log) $("cheatlog").textContent = st.log.join("\n");
   if (items && !items.length && fresh) loadItems();
+  drawRules(s);
 }
+let rulesDrawn = false;
+function drawRules(s) {
+  if (!s.rules) return;
+  if (!rulesDrawn) {
+    rulesDrawn = true;
+    $("rules").innerHTML = "<tr><th>Rule</th><th>What it does</th><th>Setting</th></tr>" + s.rules.map(r =>
+      `<tr><td>${esc(r.title)}</td><td>${esc(r.text)}</td><td><select data-rule="${esc(r.name)}" aria-label="${esc(r.title)}">` +
+      `<option value="default">Normal (${r.normal ? "on" : "off"})</option><option value="on">On</option><option value="off">Off</option></select></td></tr>`).join("");
+  }
+  document.querySelectorAll("#rules select").forEach(sel => {
+    if (sel !== document.activeElement) sel.value = s.rule_states[sel.dataset.rule] || "default";
+  });
+}
+$("rules").addEventListener("change", async e => {
+  const sel = e.target.closest("select[data-rule]");
+  if (!sel) return;
+  const r = await (await fetch(`/rules?t=${T}`, {method: "POST", body: JSON.stringify({name: sel.dataset.rule, state: sel.value})})).json();
+  if (r.error) $("cheatstate").textContent = r.error;
+});
 $("cheats").addEventListener("click", e => {
   const b = e.target.closest("button");
   if (!b) return;
@@ -676,7 +737,8 @@ class Handler(BaseHTTPRequestHandler):
             values = current_values()
             body.update(mods=mods(), values=values, built=game_path().exists(), running=game_running(),
                         builds=versions(), build=current_version(),
-                        cheats=bool(values.get("D3_MOD_CHEATS")), cheat_status=cheats_status())
+                        cheats=bool(values.get("D3_MOD_CHEATS")), cheat_status=cheats_status(),
+                        rules=[{"name": n, "title": t, "text": d, "normal": on} for n, t, d, on in RULES], rule_states=read_rules())
             return self.send(body)
         if self.path.startswith("/items"):
             try:
@@ -721,6 +783,24 @@ class Handler(BaseHTTPRequestHandler):
             folder.mkdir(parents=True, exist_ok=True)
             with open(folder / "commands.txt", "a") as f:
                 f.write(command + "\n")
+            return self.send({"ok": True})
+        if self.path.startswith("/rules"):
+            try:
+                asked = json.loads(body or b"{}")
+                name, value = str(asked.get("name", "")), str(asked.get("state", ""))
+            except (ValueError, AttributeError):
+                name, value = "", ""
+            if name not in RULE_NAMES or value not in ("default", "on", "off"):
+                return self.send({"error": "unknown rule"}, code=400)
+            states = read_rules()
+            states.pop(name, None)
+            if value != "default":
+                states[name] = value
+            folder = cheats_dir()
+            folder.mkdir(parents=True, exist_ok=True)
+            temporary = folder / "rules.txt.tmp"
+            temporary.write_text("".join(f"{n} {v}\n" for n, v in states.items()))
+            temporary.replace(folder / "rules.txt")
             return self.send({"ok": True})
         if self.path.startswith("/select"):
             try:

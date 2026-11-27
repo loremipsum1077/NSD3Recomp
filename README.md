@@ -340,9 +340,13 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   (`level 70`, `paragon 100`, `gold 1000000`, `item Unique_Helm_002_p1`, `cube`, `rifts 70`,
   `cache 3 5` for five act III caches, `spawn X1_LR_Boss_MorluSpellcaster_Ice boss`). The
   Cheats tab can also spawn any monster beside the hero by its actor name, as normal,
-  champion, rare or boss; it suggests Rime, the ice rift guardian the BlizzCon 2017 rift's
-  encounter names. Turn it off
-  with `-DD3_MOD_CHEATS=`.
+  champion, rare or boss; it suggests Rime, the ice rift guardian of the BlizzCon 2017 rift.
+  Its Game rules section switches, while the game runs, the rules each kind of game is made
+  with (the campaign, the PvP arenas, Challenge Rifts): reveal the minimap, health bars over
+  monsters, no durability loss, gold for every kill, vendors that restock on talk, no
+  experience, no Area Damage, and turning off town portals, headstones and the like. The
+  page writes them to `cheats/rules.txt` in the save folder and they stay for later games;
+  rules that would lose saves are not offered. Turn it off with `-DD3_MOD_CHEATS=`.
 - `-DD3_MOD_MOUSE=1`: a mouse or trackpad alongside the controller. The Switch's menus
   only follow the controller, so the pointer drives them the same way: pointing at a
   menu entry selects it, a left click chooses it (A), and a click on a dialog's

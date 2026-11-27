@@ -34,6 +34,8 @@
 #include "X/Server/Actors/Actors.h"
 #include "X/Common/Monsters.h"
 #include "X/Common/SNO/SNOFiles.h"
+#include "X/Common/GameTemplate.h"
+#include "X/Sigma/DataStructures/XVar.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -41,6 +43,7 @@
 #include <time.h>
 
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -51,6 +54,9 @@ BOOL ExperienceGrantDirectly(ActorCommonData & tACDPlayer, const uint64 nExpGran
 ActorID GBAddWithEncounterAddStruct(ActorAddStruct & tActorAdd, EncounterAddStruct & tEncounterAdd);   // X/Server/Actors/Actors.cpp
 BOOL SPlayerFindGoodSpawnLocation(const WorldPlace & placeStart, WorldPlace & placeResult, float flSearchRadius);  // X/Server/SPlayer.cpp
 BOOL ScenesCommonNavMeshNodeFromPlace(const WorldPlace & tPlace, NavMeshHandle * ptNavMeshHandle, const BOOL fCanActivateScenes, const BOOL fProcessInactive);  // X/Common/SceneCommon.cpp
+
+extern XVarBool s_varGameDisableAreaDamage;     // X/Server/SGame.cpp
+extern XVarBool s_varGameDisableDOTAreaDamage;  // X/Server/SGame.cpp
 
 extern "C" const char * d3_save_dir(void);  // src/nn/fs/fs.cpp
 extern "C" int d3_hotkeys_take(void);       // src/host/window.cpp
@@ -424,10 +430,104 @@ void WriteStatus(ActorCommonData * ptACD)
     WriteFile(Folder() + "/status.json", text + "]\n}\n");
 }
 
+// Game rules (the Mods page's "Game rules" panel): rules.txt in the cheats folder holds
+// lines "NAME on" or "NAME off"; a rule it does not name keeps the game type's own value.
+// NAME is a GameParamFlags flag without its GPF_ prefix, or one of the server's switches.
+struct Rule
+{
+    const char * szName;
+    int nFlag;          // a GameParamFlags bit, or -1
+    XVarBool * ptVar;   // or a server switch
+};
+const Rule kRules[] = {
+    {"ADJUST_EXP_WITH_RELATIVE_LEVEL", GPF_ADJUST_EXP_WITH_RELATIVE_LEVEL, NULL},
+    {"RESET_LIFE_STATS_UPON_LEVEL_UP", GPF_RESET_LIFE_STATS_UPON_LEVEL_UP, NULL},
+    {"GRANT_GOLD_UPON_KILL", GPF_GRANT_GOLD_UPON_KILL, NULL},
+    {"RESURRECTION_DELAY", GPF_RESURRECTION_DELAY, NULL},
+    {"APPLY_RESURRECTION_BUFFS", GPF_APPLY_RESURRECTION_BUFFS, NULL},
+    {"ALLOW_TOWN_PORTALS", GPF_ALLOW_TOWN_PORTALS, NULL},
+    {"RESTOCK_SHOPS_UPON_TALK", GPF_RESTOCK_SHOPS_UPON_TALK, NULL},
+    {"KEEP_ALL_SCENES_ACTIVE", GPF_KEEP_ALL_SCENES_ACTIVE, NULL},
+    {"QUEST_UI", GPF_QUEST_UI, NULL},
+    {"REVEAL_MINIMAP", GPF_REVEAL_MINIMAP, NULL},
+    {"CREATE_HEADSTONES_UPON_PLAYER_DEATH", GPF_CREATE_HEADSTONES_UPON_PLAYER_DEATH, NULL},
+    {"NO_EXPERIENCE", GPF_NO_EXPERIENCE, NULL},
+    {"SHOW_MONSTER_HP_BARS", GPF_SHOW_MONSTER_HP_BARS, NULL},
+    {"LIMIT_WEAPON_EFFECTS", GPF_LIMIT_WEAPON_EFFECTS, NULL},
+    {"IGNORE_DURABILITY_LOSS", GPF_IGNORE_DURABILITY_LOSS, NULL},
+    {"NO_AREA_DAMAGE", -1, &s_varGameDisableAreaDamage},
+    {"NO_DOT_AREA_DAMAGE", -1, &s_varGameDisableDOTAreaDamage},
+};
+
+std::atomic<unsigned long long> gRulesOn(0), gRulesOff(0);
+
+void ReadRules()
+{
+    static std::string seen = "\x01";  // nothing read yet
+    std::string text;
+    if (FILE * file = fopen((Folder() + "/rules.txt").c_str(), "rb"))
+    {
+        char buffer[512];
+        size_t got;
+        while ((got = fread(buffer, 1, sizeof buffer, file)) > 0 && text.size() < 8192)
+        {
+            text.append(buffer, got);
+        }
+        fclose(file);
+    }
+    if (text == seen)
+    {
+        return;
+    }
+    seen = text;
+    unsigned long long on = 0, off = 0;
+    std::string summary;
+    for (size_t at = 0; at < text.size();)
+    {
+        size_t end = text.find('\n', at);
+        std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+        at = end == std::string::npos ? text.size() : end + 1;
+        char szName[64] = {}, szState[8] = {};
+        if (sscanf(line.c_str(), "%63s %7s", szName, szState) != 2)
+        {
+            continue;
+        }
+        for (const Rule & tRule : kRules)
+        {
+            if (strcmp(tRule.szName, szName) != 0 || (strcmp(szState, "on") != 0 && strcmp(szState, "off") != 0))
+            {
+                continue;
+            }
+            if (tRule.nFlag >= 0)
+            {
+                (strcmp(szState, "on") == 0 ? on : off) |= 1ULL << tRule.nFlag;
+            }
+            summary += std::string(summary.empty() ? "" : ", ") + szName + " " + szState;
+        }
+    }
+    for (const Rule & tRule : kRules)
+    {
+        if (tRule.ptVar)
+        {
+            tRule.ptVar->Set(summary.find(std::string(tRule.szName) + " on") != std::string::npos, 0);
+        }
+    }
+    gRulesOn = on;
+    gRulesOff = off;
+    Say("game rules: " + (summary.empty() ? std::string("the game's own") : summary));
+}
+
 std::mutex gQueueLock;
 std::vector<std::string> gQueue;  // from the designer menu (src/mods/designer_menu.inc)
 
 }  // namespace
+
+// GameIsParamFlagSet (X/Common/Game.cpp, patched) asks for the game type's flags through
+// this, from any thread.
+unsigned long long D3ModRulesApply(unsigned long long uFlags)
+{
+    return (uFlags | gRulesOn.load(std::memory_order_relaxed)) & ~gRulesOff.load(std::memory_order_relaxed);
+}
 
 // Any thread: run a command line at the next server update.
 void D3ModCheatsQueue(const char * szLine)
@@ -444,6 +544,11 @@ void D3ModCheatsUpdate()
     {
         listed = true;
         WriteItemList();
+    }
+
+    if (updates % 30 == 0)
+    {
+        ReadRules();
     }
 
     Player * ptPlayer = PlayerGetFirstInGame();
