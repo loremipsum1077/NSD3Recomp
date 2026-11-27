@@ -1,14 +1,17 @@
-// World bosses (D3_MOD_EVENTS=WorldBoss): every few minutes, while a hero is out of town and
-// not in a rift, the game announces that a world boss waits somewhere else in the hero's
-// area and marks the spot on the minimap. Nothing is loaded or spawned then: the boss, one of
-// the rift guardians, appears when the hero reaches the spot and the game has loaded that
-// part of the map. It then shows on the minimap as a quest monster, and its death is
-// announced too.
+// World bosses (D3_MOD_EVENTS=WorldBoss): every few minutes, wherever the hero is (town too,
+// but not a rift), the game announces that a world boss waits in a zone of the hero's act,
+// one with a waypoint. Nothing is loaded or spawned then. When the hero enters that zone, a
+// spot in it, away from the hero, is marked on the minimap; the boss, one of the rift
+// guardians, appears when the hero reaches the spot and the game has loaded that part of the
+// map. It then shows on the minimap as a quest monster, and its death is announced too. A boss
+// nobody comes for leaves after a while, and the next one is announced later.
 //
 // The pieces are the game's own:
 //   the boss     the rift guardian encounter (GLOBALSNO_ENCOUNTER_DUNGEON_FINDER_BOSS), the
 //                pool SWorldDungeonFinderSpawnBoss picks a rift's guardian from;
-//   the spot     a random point in a random scene of the hero's world, away from the hero;
+//   the zone     a waypoint of the hero's act (ActGetCachedWaypointArray), not a town, one
+//                the hero has reached where the game keeps track;
+//   the spot     a random point in a random scene of that zone, away from the hero;
 //                the scene's specification names its area without loading it. On arrival
 //                it is snapped to walkable ground with SPlayerFindGoodSpawnLocation, as town
 //                portals do;
@@ -20,11 +23,14 @@
 //                D3ModWorldBossString supplies (through the shared string hook).
 //
 // D3_MOD_WORLD_BOSS_MINUTES (CMake) sets the time between bosses; D3_WORLD_BOSS_SECONDS
-// overrides it when starting the game, for testing, D3_WORLD_BOSS_TEST=1 lets a boss come in
-// town too, and D3_WORLD_BOSS_NEAR=1 puts the spot close to the hero so the boss wakes at
+// overrides it when starting the game, for testing, D3_WORLD_BOSS_TEST=1 puts the boss in
+// the hero's own zone (even a town), and D3_WORLD_BOSS_NEAR=1 also puts the spot close to the hero so the boss wakes at
 // once, and D3_WORLD_BOSS_SPOT=x,y picks the spot. Each step is logged as "worldboss: ..."; D3_WORLD_BOSS_TRACE=1 also logs each time
 // the client fetches an announcement's text.
+#include "Contrib/Contrib/blz/include/blz/vector.h"
+#include "X/Common/Act.h"
 #include "X/Common/ActorCommonData.h"
+#include "X/Common/Definitions/ActDefinition.h"
 #include "X/Common/Definitions/GameBalanceDefinition.h"
 #include "X/Common/Definitions/LevelAreaDefinition.h"
 #include "X/Common/Definitions/WorldDefinition.h"
@@ -53,6 +59,14 @@ ActorID GBAddWithEncounterAddStruct(ActorAddStruct & tActorAdd, EncounterAddStru
 BOOL SPlayerFindGoodSpawnLocation(const WorldPlace & placeStart, WorldPlace & placeResult, float flSearchRadius);  // SPlayer.cpp
 BOOL ScenesCommonNavMeshNodeFromPlace(const WorldPlace & tPlace, NavMeshHandle * ptNavMeshHandle, const BOOL fCanActivateScenes, const BOOL fProcessInactive);  // SceneCommon.cpp
 
+// Act.h:13-19 in the DWARF, as Act.cpp and SPlayer.cpp repeat it.
+struct CachedWaypoint {  // size 0x2c
+    Act eSourceAct;  // 0x00
+    WaypointInfo tInfo;  // 0x04
+};
+typedef blz::vector<CachedWaypoint, blz::allocator<CachedWaypoint> > CachedWaypointArray;
+const CachedWaypointArray & ActGetCachedWaypointArray();  // Act.cpp
+
 #ifndef D3_MOD_WORLD_BOSS_MINUTES
 #define D3_MOD_WORLD_BOSS_MINUTES 10
 #endif
@@ -63,6 +77,7 @@ const float kMinDistance = 150.0f;  // world units from the hero to the spot: ou
 const float kNearDistance = 70.0f;  // D3_WORLD_BOSS_NEAR: close, for testing
 const float kWakeDistance = 90.0f;  // the boss appears when the hero is this close
 const int kMaxScenes = 1024;
+const int kMinLeaveSeconds = 30 * 60;  // an announced boss nobody comes for leaves after this
 
 enum State
 {
@@ -76,11 +91,16 @@ time_t gNext = 0;
 SNOName gBossName;
 Team gBossTeam;
 WorldPlace gSpot;
-SSceneID gSpotScene = SSCENEID_INVALID;
+SSceneID gSpotScene = SSCENEID_INVALID;  // SSCENEID_INVALID until the hero enters the zone
+SNO gZoneWorld = SNO_NONE;  // the announced zone: its world
+SNO gZoneArea = SNO_NONE;  // and its level area
+time_t gLeaves = 0;
 ACDID gBoss = ACDID_INVALID;
 char gAnnounced[256];
 char gAppeared[256];
 char gSlain[256];
+char gNear[256];
+char gLeft[256];
 
 bool Trace()
 {
@@ -145,7 +165,8 @@ bool PickSpot(const ActorCommonData & tACDHero, bool bNear)
     SceneCommonData * ptSCD = NULL;
     while (SceneCommonDataArrayIterate(tIterator, ptSCD, SkipHolodeckScenes) && nScenes < kMaxScenes)
     {
-        if (ptSCD->idSWorld == tHero.idSWorld && ptSCD->tSceneSpec.arSnoLevelAreas[0] != SNO_NONE)
+        if (ptSCD->idSWorld == tHero.idSWorld && ptSCD->tSceneSpec.arSnoLevelAreas[0] != SNO_NONE &&
+            (gZoneArea == SNO_NONE || ptSCD->tSceneSpec.arSnoLevelAreas[0] == gZoneArea))
         {
             aptScenes[nScenes++] = ptSCD;
             nLoaded += (ptSCD->dwSceneFlags & (1 << SCENE_ACTIVATED)) ? 1 : 0;
@@ -230,13 +251,73 @@ bool PickSpot(const ActorCommonData & tACDHero, bool bNear)
     return bFound;
 }
 
-bool Announce(const ActorCommonData & tACDHero, bool bNear)
+// The zone: a waypoint of the hero's act that is not a town, and not the hero's own zone while
+// there is another. The act is the one whose waypoints include the hero's world; failing that,
+// any. Where the game keeps track (not adventure mode), only waypoints the hero has reached.
+// D3_WORLD_BOSS_TEST picks the hero's own zone, a town too; D3_WORLD_BOSS_NEAR, when not a town.
+bool PickZone(const Player & tPlayer, const ActorCommonData & tACDHero, bool bHere, bool bTown)
 {
-    if (!PickSpot(tACDHero, bNear))
+    SNO snoHeroWorld = WorldCommonGetWorldSNO(tACDHero.GetPlace().idSWorld);
+    SNO snoHeroArea = ACDGetLevelArea(tACDHero);
+    if (bHere)
     {
-        fprintf(stderr, "worldboss: no spot in this area\n");
+        if (snoHeroArea == SNO_NONE || (LevelAreaIsTown(snoHeroArea) && !bTown))
+        {
+            fprintf(stderr, "worldboss: the hero's own zone was asked for, but the hero is in town\n");
+            return false;
+        }
+        gZoneWorld = snoHeroWorld;
+        gZoneArea = snoHeroArea;
+        return true;
+    }
+    const CachedWaypointArray & tWaypoints = ActGetCachedWaypointArray();
+    const int nCount = (int)tWaypoints.size();
+    Act eAct = -1;
+    for (int i = 0; i < nCount; i++)
+    {
+        if (tWaypoints[i].tInfo.snoWorld == snoHeroWorld)
+        {
+            eAct = tWaypoints[i].eSourceAct;
+            break;
+        }
+    }
+    int anPicks[128];
+    int nPicks = 0;
+    for (int nPass = 0; nPass < 2 && nPicks == 0; nPass++)
+    {
+        for (int i = 0; i < nCount && nPicks < 128; i++)
+        {
+            const WaypointInfo & tInfo = tWaypoints[i].tInfo;
+            if ((eAct >= 0 && tWaypoints[i].eSourceAct != eAct) || LevelAreaIsTown(tInfo.snoLevelArea) ||
+                !PlayerHasActivatedWaypoint(tPlayer, i))
+            {
+                continue;
+            }
+            if (nPass == 0 && tInfo.snoLevelArea == snoHeroArea)
+            {
+                continue;  // somewhere else first
+            }
+            anPicks[nPicks++] = i;
+        }
+    }
+    if (nPicks == 0)
+    {
+        fprintf(stderr, "worldboss: no waypoint zone to send the hero to (%d waypoints, act %d)\n", nCount, eAct);
         return false;
     }
+    const WaypointInfo & tInfo = tWaypoints[anPicks[rand() % nPicks]].tInfo;
+    gZoneWorld = tInfo.snoWorld;
+    gZoneArea = tInfo.snoLevelArea;
+    return true;
+}
+
+bool Announce(const Player & tPlayer, const ActorCommonData & tACDHero, bool bHere, bool bTown)
+{
+    if (!PickZone(tPlayer, tACDHero, bHere, bTown))
+    {
+        return false;
+    }
+    gSpotScene = SSCENEID_INVALID;
     RNG tRNG;
     RandSetSeed_Internal(tRNG, (uint32)rand());
     if (!EncounterResolveToActorSpawnInfo(GlobalSNOGet(GLOBALSNO_ENCOUNTER_DUNGEON_FINDER_BOSS), tRNG, gBossName, gBossTeam))
@@ -249,13 +330,13 @@ bool Announce(const ActorCommonData & tACDHero, bool bNear)
     {
         sBoss = MonsterGetSNOName(gBossName);
     }
-    SceneCommonData * ptScene = SceneCommonDataTryToGet(gSpotScene);
-    CRefString sArea = LevelAreaGetLocalizedName(ptScene ? ptScene->tSceneSpec.arSnoLevelAreas[0] : ACDGetLevelArea(tACDHero));
-    snprintf(gAnnounced, sizeof(gAnnounced), "A world boss, %s, waits in %s. Follow the marker on your map!", sBoss.str(), sArea.str());
+    CRefString sArea = LevelAreaGetLocalizedName(gZoneArea);
+    snprintf(gAnnounced, sizeof(gAnnounced), "A world boss, %s, waits in %s. Go there to find it!", sBoss.str(), sArea.str());
+    snprintf(gNear, sizeof(gNear), "%s is somewhere in %s. Follow the marker on your map!", sBoss.str(), sArea.str());
     snprintf(gAppeared, sizeof(gAppeared), "%s has appeared!", sBoss.str());
     snprintf(gSlain, sizeof(gSlain), "The world boss %s has been slain!", sBoss.str());
-    fprintf(stderr, "worldboss: %s\n", gAnnounced);
-    SendSpotMarker(true);
+    snprintf(gLeft, sizeof(gLeft), "The world boss %s has left %s.", sBoss.str(), sArea.str());
+    fprintf(stderr, "worldboss: %s (world %d, level area %d)\n", gAnnounced, gZoneWorld, gZoneArea);
     Announce("General:D3Mod_WorldBossAnnounced");
     return true;
 }
@@ -337,6 +418,14 @@ const char * D3ModWorldBossString(SNO, const char * szLabel)
     {
         return gSlain;
     }
+    if (strcmp(szLabel, "D3Mod_WorldBossNear") == 0)
+    {
+        return gNear;
+    }
+    if (strcmp(szLabel, "D3Mod_WorldBossLeft") == 0)
+    {
+        return gLeft;
+    }
     return NULL;
 }
 
@@ -367,18 +456,38 @@ void D3ModWorldBossUpdate()
     case STATE_WAITING:
         if (tNow < gNext)
         {
+            static time_t tLastTrace = 0;
+            if (Trace() && tNow - tLastTrace >= 10)
+            {
+                fprintf(stderr, "worldboss: next in %d s\n", (int)(gNext - tNow));
+                tLastTrace = tNow;
+            }
             return;
         }
-        // Not in town, and not in a rift, whose guardian is its own event.
-        if ((ACDIsInTown(*ptHero) && !bTest) || ACDIsParticipatingInTieredLootRun(*ptHero) ||
-            WorldGetDungeonFinderLevel(WorldCommonGetWorldSNO(tHero.idSWorld)) >= 0)
+        // Not in a rift, whose guardian is its own event.
         {
-            gNext = tNow + 30;
-            return;
+            const char * szWait = NULL;
+            if (ACDIsParticipatingInTieredLootRun(*ptHero))
+                szWait = "the hero is in a greater rift";
+            else if (WorldGetDungeonFinderLevel(WorldCommonGetWorldSNO(tHero.idSWorld)) >= 0)
+                szWait = "the hero is in a rift";
+            static const char * szLastWait = NULL;
+            if (szWait != szLastWait)
+            {
+                if (szWait)
+                    fprintf(stderr, "worldboss: due, but %s; trying again every 30 s\n", szWait);
+                szLastWait = szWait;
+            }
+            if (szWait)
+            {
+                gNext = tNow + 30;
+                return;
+            }
         }
-        if (Announce(*ptHero, bNear))
+        if (Announce(*ptPlayer, *ptHero, bTest || bNear, bTest))
         {
             gState = STATE_ANNOUNCED;
+            gLeaves = tNow + (IntervalSeconds() * 3 > kMinLeaveSeconds ? IntervalSeconds() * 3 : kMinLeaveSeconds);
         }
         else
         {
@@ -388,10 +497,38 @@ void D3ModWorldBossUpdate()
 
     case STATE_ANNOUNCED:
     {
-        if (tHero.idSWorld != gSpot.idSWorld)
+        if (gSpotScene != SSCENEID_INVALID && tHero.idSWorld != gSpot.idSWorld)
         {
-            fprintf(stderr, "worldboss: the hero left the area before the boss came\n");
+            fprintf(stderr, "worldboss: the hero left the zone before the boss came; it waits there still\n");
+            gSpotScene = SSCENEID_INVALID;
+        }
+        if (tNow >= gLeaves)
+        {
+            fprintf(stderr, "worldboss: nobody came; %s\n", gLeft);
+            if (gSpotScene != SSCENEID_INVALID)
+            {
+                SendSpotMarker(false);
+            }
+            Announce("General:D3Mod_WorldBossLeft");
             Wait(tNow, IntervalSeconds());
+            return;
+        }
+        if (gSpotScene == SSCENEID_INVALID)
+        {
+            if (WorldCommonGetWorldSNO(tHero.idSWorld) != gZoneWorld || ACDIsParticipatingInTieredLootRun(*ptHero))
+            {
+                return;
+            }
+            if (!PickSpot(*ptHero, bNear))
+            {
+                if (Trace())
+                {
+                    fprintf(stderr, "worldboss: in the zone's world, but no scene of the zone yet\n");
+                }
+                return;
+            }
+            SendSpotMarker(true);
+            Announce("General:D3Mod_WorldBossNear");
             return;
         }
         SceneCommonData * ptScene = SceneCommonDataTryToGet(gSpotScene);
