@@ -193,7 +193,8 @@ answer to the game's name prompt), `D3_GAME_DIR`, `D3_SAVE_DIR` and
 `cache/shaders-2.7.7/`),
 `D3_NVN_TRACE=frames` or `all`,
 `D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds;
-`F1`-`F3` and `F5`-`F8` press those hotkeys once),
+`LSUP` and the like push the left stick, `RSUP` and the like the right one;
+`F1`-`F3` and `F5`-`F9` press those hotkeys once),
 `D3_MOUSE_SCRIPT="40:left:0.5,0.4 45:move:0.3,0.3 50:right:0.6,0.5@2"` (with the Mouse
 mod: click or move at a fraction of the window at given seconds, `@` holds that long;
 the real pointer is ignored), `D3_MOUSE_TRACE=1` (what each click hit),
@@ -397,6 +398,13 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   F5-F7 views. The Quest page (locations, bosses, quest steps) and the Music page fill
   themselves from game data as the original did, but what they ran was a developer
   console command, which this build does not have, so choosing one only logs it.
+  F9 is a free camera: it starts where the game's camera is, and the controller then
+  flies it instead of moving the hero. The left stick (WASD) moves along the view and
+  sideways, the right stick (IJKL) turns, R or ZR (2, 4) rises, L or ZL (1, 3) sinks, and
+  holding A (Space) goes four times as fast. F9 again gives the controller back and
+  returns to the normal camera. The hero stays where they are, and only what the game
+  has loaded around them is drawn, so far away there is nothing to see. It is the game's
+  static camera view, moved every frame.
   `src/mods/dev.cpp`, `src/mods/designer_menu.inc`; turn it off with `-DD3_MOD_DEV_TOOLS=`.
 - Test items: with the cheats on, the Cheats tab's item picker also lists the items
   Blizzard marked test-only or art-test (`ThorTest_Mojo`, `Sword_1H_PvP_70`,

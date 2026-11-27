@@ -34,13 +34,19 @@ int d3_window_pump(void);
 // if one is attached, combined with the keyboard.
 void d3_input_read(struct d3_pad_state * out);
 
+// While captured, d3_input_read gives an idle controller (connected, nothing held), so the
+// game ignores the pad, and d3_input_read_raw still gives the real state. The developer
+// tools' free camera captures it. Any thread.
+void d3_input_capture(int on);
+void d3_input_read_raw(struct d3_pad_state * out);
+
 // Hotkeys pressed since the last call (D3_HOTKEY_* bits), then cleared. Any thread.
 // d3_hotkeys_take takes the cheat keys (F1-F3), which only the Cheats mod (D3_MOD_CHEATS)
 // acts on; d3_hotkeys_take_mask takes the given ones. F5-F7 are the developer tools'
-// (D3_MOD_DEV_TOOLS).
+// (D3_MOD_DEV_TOOLS), with F8 and F9.
 enum { D3_HOTKEY_LEVEL_MAX = 1 << 0, D3_HOTKEY_PARAGON = 1 << 1, D3_HOTKEY_GOLD = 1 << 2,
        D3_HOTKEY_CAMERA = 1 << 3, D3_HOTKEY_TARGET_NAME = 1 << 4, D3_HOTKEY_STICK_VIEW = 1 << 5,
-       D3_HOTKEY_DESIGNER = 1 << 6 };
+       D3_HOTKEY_DESIGNER = 1 << 6, D3_HOTKEY_FREECAM = 1 << 7 };
 int d3_hotkeys_take(void);
 int d3_hotkeys_take_mask(int mask);
 

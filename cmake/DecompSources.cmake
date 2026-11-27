@@ -191,8 +191,8 @@ set(D3_MOD_LOAD_WORLD "" CACHE STRING "Mod: start straight into this world (an S
 set(D3_MOD_BLIZZCON "" CACHE STRING "Mod: the BlizzCon demo; 1 to turn on, empty for off")
 # D3_MOD_DEV_TOOLS=1: F5 the screenshot camera, F6 the target's internal name, F7 the
 # controller view, developer views the game still draws once switched on; F8 the designer
-# menu (src/mods/designer_menu.inc).
-set(D3_MOD_DEV_TOOLS "" CACHE STRING "Mod: developer views on F5-F7 and the designer menu on F8; 1 to turn on, empty for off")
+# menu (src/mods/designer_menu.inc); F9 a free camera.
+set(D3_MOD_DEV_TOOLS "" CACHE STRING "Mod: developer views on F5-F7, the designer menu on F8 and a free camera on F9; 1 to turn on, empty for off")
 if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS)
     set(_dev_defs "D3_MOD_LOAD_WORLD=\"${D3_MOD_LOAD_WORLD}\"")
     if(D3_MOD_LOAD_WORLD)
@@ -206,7 +206,7 @@ if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS)
                       "        if (false)")
     endif()
     if(D3_MOD_DEV_TOOLS)
-        message(STATUS "Mod: developer views on F5-F7, designer menu on F8")
+        message(STATUS "Mod: developer views on F5-F7, designer menu on F8, free camera on F9")
         list(APPEND _dev_defs "D3_MOD_DEV_TOOLS=1")
         d3_patch_source("X/Client/Input/InputNX64.cpp"
             --replace "    if ( sgtNX64Globals.bWasControllerAppShown )"

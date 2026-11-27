@@ -159,8 +159,9 @@ int Clamp(int value)
 // presses each named button for a quarter of a second at the given number of seconds
 // after the window opened. Names: A B X Y L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN, and
 // LSUP LSDOWN LSLEFT LSRIGHT to push the left stick. "@seconds" after a name holds it
-// longer: "40:LSRIGHT@2". F1-F3 and F5-F8 press that hotkey once.
-int g_scriptStickX, g_scriptStickY;
+// longer: "40:LSRIGHT@2"; RSUP RSDOWN RSLEFT RSRIGHT push the right stick. F1-F3 and F5-F9
+// press that hotkey once.
+int g_scriptStickX, g_scriptStickY, g_scriptRStickX, g_scriptRStickY;
 
 uint64_t ScriptedButtons()
 {
@@ -176,7 +177,7 @@ uint64_t ScriptedButtons()
     }
     double now = (SDL_GetTicks() - start) / 1000.0;
     uint64_t buttons = 0;
-    g_scriptStickX = g_scriptStickY = 0;
+    g_scriptStickX = g_scriptStickY = g_scriptRStickX = g_scriptRStickY = 0;
     static bool fired[64];
     int entry = 0;
     for (const char * p = script; *p; entry++)
@@ -195,10 +196,11 @@ uint64_t ScriptedButtons()
         {
             p += more;
         }
-        if (name[0] == 'F' && name[1] >= '1' && name[1] <= '8' && name[2] == 0)
+        if (name[0] == 'F' && name[1] >= '1' && name[1] <= '9' && name[2] == 0)
         {
             static const int kKeys[] = {D3_HOTKEY_LEVEL_MAX, D3_HOTKEY_PARAGON, D3_HOTKEY_GOLD, 0,
-                                        D3_HOTKEY_CAMERA, D3_HOTKEY_TARGET_NAME, D3_HOTKEY_STICK_VIEW, D3_HOTKEY_DESIGNER};
+                                        D3_HOTKEY_CAMERA, D3_HOTKEY_TARGET_NAME, D3_HOTKEY_STICK_VIEW, D3_HOTKEY_DESIGNER,
+                                        D3_HOTKEY_FREECAM};
             if (now >= at && entry < 64 && !fired[entry])
             {
                 fired[entry] = true;
@@ -212,6 +214,8 @@ uint64_t ScriptedButtons()
         {
             g_scriptStickX += strcmp(name, "LSRIGHT") == 0 ? 32767 : strcmp(name, "LSLEFT") == 0 ? -32767 : 0;
             g_scriptStickY += strcmp(name, "LSUP") == 0 ? 32767 : strcmp(name, "LSDOWN") == 0 ? -32767 : 0;
+            g_scriptRStickX += strcmp(name, "RSRIGHT") == 0 ? 32767 : strcmp(name, "RSLEFT") == 0 ? -32767 : 0;
+            g_scriptRStickY += strcmp(name, "RSUP") == 0 ? 32767 : strcmp(name, "RSDOWN") == 0 ? -32767 : 0;
             for (const auto & n : kNames)
             {
                 if (strcmp(n.name, name) == 0)
@@ -293,6 +297,8 @@ void Sample()
     pthread_mutex_unlock(&g_lock);
     s.leftX = Clamp(s.leftX + g_scriptStickX);
     s.leftY = Clamp(s.leftY + g_scriptStickY);
+    s.rightX = Clamp(s.rightX + g_scriptRStickX);
+    s.rightY = Clamp(s.rightY + g_scriptRStickY);
 
     pthread_mutex_lock(&g_lock);
     bool changed = s.buttons != g_state.buttons;
@@ -373,6 +379,7 @@ int d3_window_pump(void)
                           : e.key.keysym.scancode == SDL_SCANCODE_F6 ? D3_HOTKEY_TARGET_NAME
                           : e.key.keysym.scancode == SDL_SCANCODE_F7 ? D3_HOTKEY_STICK_VIEW
                           : e.key.keysym.scancode == SDL_SCANCODE_F8 ? D3_HOTKEY_DESIGNER
+                          : e.key.keysym.scancode == SDL_SCANCODE_F9 ? D3_HOTKEY_FREECAM
                                                                      : 0;
                 if (key)
                 {
@@ -462,9 +469,30 @@ int d3_hotkeys_take(void)
     return d3_hotkeys_take_mask(D3_HOTKEY_LEVEL_MAX | D3_HOTKEY_PARAGON | D3_HOTKEY_GOLD);
 }
 
+static bool g_captured;  // under g_lock
+
+void d3_input_capture(int on)
+{
+    pthread_mutex_lock(&g_lock);
+    g_captured = on != 0;
+    pthread_mutex_unlock(&g_lock);
+}
+
+void d3_input_read_raw(struct d3_pad_state * out)
+{
+    pthread_mutex_lock(&g_lock);
+    *out = g_state;
+    pthread_mutex_unlock(&g_lock);
+}
+
 void d3_input_read(struct d3_pad_state * out)
 {
     pthread_mutex_lock(&g_lock);
     *out = g_state;
+    if (g_captured)
+    {
+        out->buttons = 0;
+        out->leftX = out->leftY = out->rightX = out->rightY = 0;
+    }
     pthread_mutex_unlock(&g_lock);
 }
