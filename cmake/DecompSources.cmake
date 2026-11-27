@@ -156,6 +156,11 @@ if(D3_MOD_SEASON)
     d3_patch_source("X/Client/Console/LobbyService.cpp"
         --replace "blz::atomic_bool sbSeasonsInitialized(false)$<SEMICOLON>" "blz::atomic_bool sbSeasonsInitialized(true)$<SEMICOLON>"
         --replace "::execute>(pfnCallback, FALSE))$<SEMICOLON>" "::execute>(pfnCallback, TRUE))$<SEMICOLON>")
+    # Starting a seasonal game warns that players not signed in online miss the
+    # leaderboards; offline there are none, so the check is skipped.
+    d3_patch_source("X/Client/UserInterface/Console/UIConsoleMainMenu.cpp"
+        --replace "                !sVerifyAllLocalPlayersSignedInOnline(nProfileUserIdx))"
+                  "                false)")
 endif()
 
 # D3_MOD_CHEATS=1 adds testing cheats: F1 raises the hero to the level cap, F2 adds 100
