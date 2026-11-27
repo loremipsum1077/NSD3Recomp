@@ -159,7 +159,7 @@ int Clamp(int value)
 // presses each named button for a quarter of a second at the given number of seconds
 // after the window opened. Names: A B X Y L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN, and
 // LSUP LSDOWN LSLEFT LSRIGHT to push the left stick. "@seconds" after a name holds it
-// longer: "40:LSRIGHT@2".
+// longer: "40:LSRIGHT@2". F1-F3 and F5-F8 press that hotkey once.
 int g_scriptStickX, g_scriptStickY;
 
 uint64_t ScriptedButtons()
@@ -177,12 +177,14 @@ uint64_t ScriptedButtons()
     double now = (SDL_GetTicks() - start) / 1000.0;
     uint64_t buttons = 0;
     g_scriptStickX = g_scriptStickY = 0;
-    for (const char * p = script; *p;)
+    static bool fired[64];
+    int entry = 0;
+    for (const char * p = script; *p; entry++)
     {
         char name[8] = {};
         double at = 0;
         int used = 0;
-        if (sscanf(p, " %lf:%7[A-Z]%n", &at, name, &used) != 2)
+        if (sscanf(p, " %lf:%7[A-Z0-9]%n", &at, name, &used) != 2)
         {
             break;
         }
@@ -192,6 +194,19 @@ uint64_t ScriptedButtons()
         if (sscanf(p, "@%lf%n", &hold, &more) == 1)
         {
             p += more;
+        }
+        if (name[0] == 'F' && name[1] >= '1' && name[1] <= '8' && name[2] == 0)
+        {
+            static const int kKeys[] = {D3_HOTKEY_LEVEL_MAX, D3_HOTKEY_PARAGON, D3_HOTKEY_GOLD, 0,
+                                        D3_HOTKEY_CAMERA, D3_HOTKEY_TARGET_NAME, D3_HOTKEY_STICK_VIEW, D3_HOTKEY_DESIGNER};
+            if (now >= at && entry < 64 && !fired[entry])
+            {
+                fired[entry] = true;
+                pthread_mutex_lock(&g_lock);
+                g_hotkeys |= kKeys[name[1] - '1'];
+                pthread_mutex_unlock(&g_lock);
+            }
+            continue;
         }
         if (now >= at && now < at + hold)
         {
@@ -349,14 +364,22 @@ int d3_window_pump(void)
             g_quit = true;
             break;
         case SDL_KEYDOWN:
-            if (!e.key.repeat && (e.key.keysym.scancode == SDL_SCANCODE_F1 || e.key.keysym.scancode == SDL_SCANCODE_F2 ||
-                                    e.key.keysym.scancode == SDL_SCANCODE_F3))
+            if (!e.key.repeat)
             {
-                pthread_mutex_lock(&g_lock);
-                g_hotkeys |= e.key.keysym.scancode == SDL_SCANCODE_F1   ? D3_HOTKEY_LEVEL_MAX
-                             : e.key.keysym.scancode == SDL_SCANCODE_F2 ? D3_HOTKEY_PARAGON
-                                                                        : D3_HOTKEY_GOLD;
-                pthread_mutex_unlock(&g_lock);
+                int key = e.key.keysym.scancode == SDL_SCANCODE_F1   ? D3_HOTKEY_LEVEL_MAX
+                          : e.key.keysym.scancode == SDL_SCANCODE_F2 ? D3_HOTKEY_PARAGON
+                          : e.key.keysym.scancode == SDL_SCANCODE_F3 ? D3_HOTKEY_GOLD
+                          : e.key.keysym.scancode == SDL_SCANCODE_F5 ? D3_HOTKEY_CAMERA
+                          : e.key.keysym.scancode == SDL_SCANCODE_F6 ? D3_HOTKEY_TARGET_NAME
+                          : e.key.keysym.scancode == SDL_SCANCODE_F7 ? D3_HOTKEY_STICK_VIEW
+                          : e.key.keysym.scancode == SDL_SCANCODE_F8 ? D3_HOTKEY_DESIGNER
+                                                                     : 0;
+                if (key)
+                {
+                    pthread_mutex_lock(&g_lock);
+                    g_hotkeys |= key;
+                    pthread_mutex_unlock(&g_lock);
+                }
             }
             break;
         case SDL_MOUSEMOTION:
@@ -425,13 +448,18 @@ int d3_mouse_take(struct d3_mouse_event * out, int max)
     return count;
 }
 
-int d3_hotkeys_take(void)
+int d3_hotkeys_take_mask(int mask)
 {
     pthread_mutex_lock(&g_lock);
-    int keys = g_hotkeys;
-    g_hotkeys = 0;
+    int keys = g_hotkeys & mask;
+    g_hotkeys &= ~mask;
     pthread_mutex_unlock(&g_lock);
     return keys;
+}
+
+int d3_hotkeys_take(void)
+{
+    return d3_hotkeys_take_mask(D3_HOTKEY_LEVEL_MAX | D3_HOTKEY_PARAGON | D3_HOTKEY_GOLD);
 }
 
 void d3_input_read(struct d3_pad_state * out)

@@ -133,7 +133,7 @@ def cheats_status():
 
 
 # What the page may ask the game to do (src/mods/cheats.cpp reads the same lines).
-CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10}|cube|rifts ([1-9]|[1-9][0-9]|1[0-4][0-9]|150)|cache [1-5]( ([1-9]|1[0-9]|20))?)$")
+CHEAT = re.compile(r"^(level ([1-9]|[1-6][0-9]|70)|paragon [1-9][0-9]{0,3}|item [A-Za-z0-9_\-]{1,127}( ([1-9]|[1-4][0-9]|50))?|gold [1-9][0-9]{0,10}|cube|rifts ([1-9]|[1-9][0-9]|1[0-4][0-9]|150)|cache [1-5]( ([1-9]|1[0-9]|20))?|spawn [A-Za-z0-9_\-]{1,127}( (normal|champion|rare|boss))?)$")
 
 
 def current_values():
@@ -373,6 +373,11 @@ PAGE = r"""<!doctype html>
       <div class="row"><input type="text" inputmode="numeric" id="caches" value="1" aria-label="Number of caches" style="width:56px"><span class="hint" style="margin:0">caches, from act</span></div>
       <div class="row acts"><button data-act="1">I</button><button data-act="2">II</button><button data-act="3">III</button><button data-act="4">IV</button><button data-act="5">V</button></div>
     </div>
+    <div class="panel tool"><h3>Spawn a monster</h3>
+      <div class="row"><input type="text" id="spawnname" value="X1_LR_Boss_MorluSpellcaster_Ice" aria-label="Monster's actor name" style="width:220px"></div>
+      <div class="row"><select id="spawnrarity" aria-label="Rarity"><option value="normal">Normal</option><option value="champion">Champion</option><option value="rare">Rare</option><option value="boss" selected>Boss</option></select><button id="spawn">Spawn</button></div>
+      <p class="hint">By its actor name, beside your hero. The default is Rime, the ice rift guardian of the BlizzCon 2017 rift.</p>
+    </div>
   </div>
   <h2>Items</h2>
   <div class="finder">
@@ -581,6 +586,7 @@ $("cheats").addEventListener("click", e => {
   else if (b.id === "addparagon") cheat(`paragon ${parseInt($("paragon").value, 10) || 0}`);
   else if (b.id === "addgold") cheat(`gold ${parseInt($("gold").value, 10) || 0}`);
   else if (b.dataset.item) cheat(`item ${b.dataset.item}`);
+  else if (b.id === "spawn") cheat(`spawn ${$("spawnname").value.trim()} ${$("spawnrarity").value}`);
   else if (b.dataset.act) cheat(`cache ${b.dataset.act} ${Math.min(20, Math.max(1, parseInt($("caches").value, 10) || 1))}`);
 });
 ["itemsearch", "rarity", "current"].forEach(id => $(id).addEventListener("input", drawItems));

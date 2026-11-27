@@ -343,5 +343,14 @@
     "type": "toggle",
     "default": "1",
     "pattern": "^1$"
+  },
+  {
+    "id": "D3_MOD_DEV_TOOLS",
+    "title": "Developer views (F5-F8)",
+    "group": "Developer",
+    "description": "Hotkeys for views Blizzard's developers used, which the game still draws once switched on. F5: a fixed camera looking at your hero from the front, for screenshots (F5 again goes back). F6: the name of what you would attack, at the top of the screen (the release build shows it as a code). F7: the left stick's position and dead zone. F8: the designer menu, a developer menu left in the game; with Cheats on, its Character, Game and Quick Options entries work (Quest and Music only list things).",
+    "type": "toggle",
+    "default": "1",
+    "pattern": "^1$"
   }
 ]

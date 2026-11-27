@@ -192,7 +192,8 @@ answer to the game's name prompt), `D3_GAME_DIR`, `D3_SAVE_DIR` and
 `D3_SHADER_CACHE` (other folders than `game/2.7.7/`, `save/2.7.7/` and
 `cache/shaders-2.7.7/`),
 `D3_NVN_TRACE=frames` or `all`,
-`D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds),
+`D3_INPUT_TRACE=1`, `D3_INPUT_SCRIPT="5:A 8:PLUS"` (press buttons at given seconds;
+`F1`-`F3` and `F5`-`F8` press those hotkeys once),
 `D3_MOUSE_SCRIPT="40:left:0.5,0.4 45:move:0.3,0.3 50:right:0.6,0.5@2"` (with the Mouse
 mod: click or move at a fraction of the window at given seconds, `@` holds that long;
 the real pointer is ignored), `D3_MOUSE_TRACE=1` (what each click hit),
@@ -201,6 +202,13 @@ the real pointer is ignored), `D3_MOUSE_TRACE=1` (what each click hit),
 (list a frame's draws; leave out a different slice of them each frame, to find the
 one that draws wrongly), `D3_METAL_PIPELINES=1`, `D3_SHADER_SKIP=<hash>,...`, `D3_SOUND_STATS=1` (what was decoded and how loud the output is),
 `D3_SOUND_DUMP=<directory>` (first decoded samples as WAV), `D3_NO_SOUND=1`.
+
+Arguments after `d3` go to the game as its own command line, as Blizzard's tools passed
+them. `-blizzcon` starts the BlizzCon demo (use the `D3_MOD_BLIZZCON` mod instead, which
+also fixes its UI). `-test badlinks` runs Blizzard's data audit: it checks every link
+between the game's files, writes `\BadLinks.txt` (backslash included) in the folder the
+game was started from, and quits. Nearly all of its entries are empty links; the rest
+name worlds, areas and quests that were left out of the Switch build.
 
 ## Mods
 
@@ -330,7 +338,10 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   files in `<save folder>/cheats/`; if you start the game yourself with a different
   `D3_SAVE_DIR`, write commands to that folder's `cheats/commands.txt` instead
   (`level 70`, `paragon 100`, `gold 1000000`, `item Unique_Helm_002_p1`, `cube`, `rifts 70`,
-  `cache 3 5` for five act III caches). Turn it off
+  `cache 3 5` for five act III caches, `spawn X1_LR_Boss_MorluSpellcaster_Ice boss`). The
+  Cheats tab can also spawn any monster beside the hero by its actor name, as normal,
+  champion, rare or boss; it suggests Rime, the ice rift guardian the BlizzCon 2017 rift's
+  encounter names. Turn it off
   with `-DD3_MOD_CHEATS=`.
 - `-DD3_MOD_MOUSE=1`: a mouse or trackpad alongside the controller. The Switch's menus
   only follow the controller, so the pointer drives them the same way: pointing at a
@@ -369,9 +380,24 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   Your own heroes are not changed (the game's settings file may be). The demo's title
   screen loaded fewer UI files than 2.7.7's game screens need, so the mod loads the usual
   set. Turn it off with `-DD3_MOD_BLIZZCON=`.
+- `-DD3_MOD_DEV_TOOLS=1`: hotkeys for views Blizzard's developers used, which the game
+  still draws once switched on. F5 cuts to a fixed camera looking at the hero from the
+  front, for screenshots (the game's own, unsent, screenshot view); F5 again goes back.
+  F6 shows the name of what the primary skill would hit at the top of the screen (the
+  release build has no names, so it shows a code). F7 shows the left stick's position,
+  magnitude and dead zone. F8 opens the designer menu, a developer menu whose layout,
+  screen and button code the release still has: Character, Quest, Game, Console, Quick
+  Options and Music pages. Its entry lists and every command they ran were dropped, so
+  the entries are new: with `D3_MOD_CHEATS` they run cheats-page commands (level 70,
+  +100 paragon, gold, the cube, caches, spawning Rime), and the quick options switch the
+  F5-F7 views. The Quest page (locations, bosses, quest steps) and the Music page fill
+  themselves from game data as the original did, but what they ran was a developer
+  console command, which this build does not have, so choosing one only logs it.
+  `src/mods/dev.cpp`, `src/mods/designer_menu.inc`; turn it off with `-DD3_MOD_DEV_TOOLS=`.
 - Test items: with the cheats on, the Cheats tab's item picker also lists the items
   Blizzard marked test-only or art-test (`ThorTest_Mojo`, `Sword_1H_PvP_70`,
-  `Art_Test_Bow_1`, the 4v4 PvP amulets and about 400 more). Most have no in-game name.
+  `Art_Test_Bow_1`, the 4v4 PvP amulets and about 400 more; choose "All items", as
+  they have no rarity). Most have no in-game name.
 
 ## Measuring progress
 

@@ -185,7 +185,11 @@ endif()
 # the usual set.
 set(D3_MOD_LOAD_WORLD "" CACHE STRING "Mod: start straight into this world (an SNO name); empty for the menus")
 set(D3_MOD_BLIZZCON "" CACHE STRING "Mod: the BlizzCon demo; 1 to turn on, empty for off")
-if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON)
+# D3_MOD_DEV_TOOLS=1: F5 the screenshot camera, F6 the target's internal name, F7 the
+# controller view, developer views the game still draws once switched on; F8 the designer
+# menu (src/mods/designer_menu.inc).
+set(D3_MOD_DEV_TOOLS "" CACHE STRING "Mod: developer views on F5-F7 and the designer menu on F8; 1 to turn on, empty for off")
+if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS)
     set(_dev_defs "D3_MOD_LOAD_WORLD=\"${D3_MOD_LOAD_WORLD}\"")
     if(D3_MOD_LOAD_WORLD)
         message(STATUS "Mod: start in world ${D3_MOD_LOAD_WORLD}")
@@ -196,6 +200,21 @@ if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON)
         d3_patch_source("X/Client/UserInterface/UI.cpp"
             --replace "        if (CmdLineGetParams()->tBitArray.Test(CMDLINE_BLIZZCON_BIT))"
                       "        if (false)")
+    endif()
+    if(D3_MOD_DEV_TOOLS)
+        message(STATUS "Mod: developer views on F5-F7, designer menu on F8")
+        list(APPEND _dev_defs "D3_MOD_DEV_TOOLS=1")
+        d3_patch_source("X/Client/Input/InputNX64.cpp"
+            --replace "    if ( sgtNX64Globals.bWasControllerAppShown )"
+                      "    { void D3ModDevToolsUpdate()$<SEMICOLON> D3ModDevToolsUpdate()$<SEMICOLON> } if ( sgtNX64Globals.bWasControllerAppShown )")
+        # F8 the designer menu: the release dropped its setup and list code, and runs none of
+        # its entries' commands; src/mods/designer_menu.inc supplies both.
+        d3_patch_source("X/Client/UserInterface/Console/UIConsoleDesignerMenu.cpp"
+            --replace "DesignerMenuGlobals * sgptDesignerMenuGlobals$<SEMICOLON>"
+                      "DesignerMenuGlobals * sgptDesignerMenuGlobals$<SEMICOLON> static void D3ModDesignerCommand(LPCSTR)$<SEMICOLON>"
+            --replace "        puszCurrentCommand += strlen(puszCurrentCommand)$<SEMICOLON>"
+                      "        D3ModDesignerCommand(puszCurrentCommand)$<SEMICOLON> puszCurrentCommand += strlen(puszCurrentCommand)$<SEMICOLON>"
+            --append "#include \"${PROJECT_SOURCE_DIR}/src/mods/designer_menu.inc\"")
     endif()
     d3_patch_source("X/Common/Shell/MainNX64.cpp"
         --replace "    if (gtCmdLineParams.eTestType != TESTTYPE_NONE)"

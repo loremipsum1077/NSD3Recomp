@@ -16,6 +16,10 @@
 //                          difficulty
 //       cube               unlock Kanai's Cube (saved with the account, like picking it
 //                          up in the Ruins of Sescheron)
+//       spawn <actor> [normal|champion|rare|boss]
+//                          add a monster near the hero by its actor's SNO name, e.g.
+//                          "spawn X1_LR_Boss_MorluSpellcaster_Ice boss": Rime, the ice
+//                          Morlu rift guardian the BlizzCon 2017 rift's encounter names
 // The game answers in <save>/cheats/status.json and lists every item, with its in-game
 // name, in <save>/cheats/items.json for the page's item picker.
 #include "X/Common/ActorCommonData.h"
@@ -27,6 +31,9 @@
 #include "X/Common/Game.h"
 #include "X/Server/Crafting/SItemCrafting.h"
 #include "X/Server/LuaScript/ScriptUtil.h"
+#include "X/Server/Actors/Actors.h"
+#include "X/Common/Monsters.h"
+#include "X/Common/SNO/SNOFiles.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -34,11 +41,16 @@
 #include <time.h>
 
 #include <algorithm>
+#include <mutex>
 #include <string>
 #include <vector>
 
 BOOL ExperienceGrantDirectly(ActorCommonData & tACDPlayer, const uint64 nExpGranted, const BOOL bNotifyClient,
                              const BOOL bGrantToAllPlayersIfLocal);  // X/Server/Experience.cpp
+
+ActorID GBAddWithEncounterAddStruct(ActorAddStruct & tActorAdd, EncounterAddStruct & tEncounterAdd);   // X/Server/Actors/Actors.cpp
+BOOL SPlayerFindGoodSpawnLocation(const WorldPlace & placeStart, WorldPlace & placeResult, float flSearchRadius);  // X/Server/SPlayer.cpp
+BOOL ScenesCommonNavMeshNodeFromPlace(const WorldPlace & tPlace, NavMeshHandle * ptNavMeshHandle, const BOOL fCanActivateScenes, const BOOL fProcessInactive);  // X/Common/SceneCommon.cpp
 
 extern "C" const char * d3_save_dir(void);  // src/nn/fs/fs.cpp
 extern "C" int d3_hotkeys_take(void);       // src/host/window.cpp
@@ -297,8 +309,62 @@ void GiveItem(ACDID idACDPlayer, const char * szName, int nCount)
     }
 }
 
+// A monster near the hero, by actor name, as the world boss mod adds its bosses.
+void Spawn(ActorCommonData & tHero, const char * szName, const char * szRarity)
+{
+    SNOName tName;
+    Team eTeam = (Team)10;  // TEAM_MONSTER_0
+    tName.snoGroup = ACTOR_SNO;
+    tName.snoHandle = SNOFileLookupGUID(ACTOR_SNO, szName);
+    if (tName.snoHandle == SNO_NONE)
+    {
+        Say(std::string("no actor named ") + szName);
+        return;
+    }
+    MonsterRarity eRarity = MR_NORMAL;
+    if (strcmp(szRarity, "champion") == 0)
+        eRarity = MR_CHAMPION;
+    else if (strcmp(szRarity, "rare") == 0)
+        eRarity = MR_RARE;
+    else if (strcmp(szRarity, "boss") == 0)
+        eRarity = MR_BOSS;
+
+    WorldPlace tPlace = tHero.GetPlace();
+    tPlace.wp.x += 15.0f;
+    WorldPlace tFound;
+    if (SPlayerFindGoodSpawnLocation(tPlace, tFound, 20.0f))
+    {
+        tPlace = tFound;
+    }
+    ActorAddStruct tActorAdd;
+    tActorAdd.tSNOName = tName;
+    tActorAdd.snoActor = tName.snoHandle;
+    tActorAdd.tPlace = tPlace;
+    tActorAdd.eMonsterRarity = eRarity;
+    tActorAdd.eTeam = eTeam;
+    tActorAdd.dwActorAddFlags |= (1 << ACTORADD_EVEN_WHEN_STUCK);
+    tActorAdd.dwActorAddFlags |= (1 << ACTORADD_DONT_PERTURB);
+    ScenesCommonNavMeshNodeFromPlace(tActorAdd.tPlace, &tActorAdd.tNavMeshHandle, FALSE, FALSE);
+    GBHandleList listGroupAffixes(GBGetHandlePool());
+    EncounterAddStruct tEncounterAdd;
+    EncounterAddInitialize(tEncounterAdd, listGroupAffixes);
+    ActorID idActor = GBAddWithEncounterAddStruct(tActorAdd, tEncounterAdd);
+    if (idActor == ACTORID_INVALID || !ACDTryToGet(ACDFindByActor(idActor)))
+    {
+        Say(std::string("the game would not add ") + szName);
+        return;
+    }
+    CRefString sMonster;
+    if (!MonsterGetBaseName(tName, sMonster))
+    {
+        sMonster = SNOToString(ACTOR_SNO, tName.snoHandle);
+    }
+    Say(std::string("spawned ") + sMonster.str() + " (" + SNOToString(ACTOR_SNO, tName.snoHandle).str() + ")");
+}
+
 void Run(const char * szLine, Player & tPlayer, ACDID idACDPlayer, ActorCommonData & tACD)
 {
+    char szRarity[16] = {};
     char szWord[32] = {};
     char szName[128] = {};
     int nValue = 0;
@@ -328,6 +394,10 @@ void Run(const char * szLine, Player & tPlayer, ACDID idACDPlayer, ActorCommonDa
     {
         AddParagon(tACD, std::max(0, std::min(nValue, 20000)));
     }
+    else if (sscanf(szLine, "spawn %127s %15s", szName, szRarity) >= 1)
+    {
+        Spawn(tACD, szName, szRarity);
+    }
     else if (sscanf(szLine, "item %127s %d", szName, &nValue) >= 1)
     {
         GiveItem(idACDPlayer, szName, std::max(1, std::min(nValue ? nValue : 1, kMaxItemCount)));
@@ -354,7 +424,17 @@ void WriteStatus(ActorCommonData * ptACD)
     WriteFile(Folder() + "/status.json", text + "]\n}\n");
 }
 
+std::mutex gQueueLock;
+std::vector<std::string> gQueue;  // from the designer menu (src/mods/designer_menu.inc)
+
 }  // namespace
+
+// Any thread: run a command line at the next server update.
+void D3ModCheatsQueue(const char * szLine)
+{
+    std::lock_guard<std::mutex> lock(gQueueLock);
+    gQueue.push_back(szLine);
+}
 
 void D3ModCheatsUpdate()
 {
@@ -392,6 +472,17 @@ void D3ModCheatsUpdate()
     if (hotkeys & D3_HOTKEY_PARAGON)
     {
         AddParagon(*ptACD, kHotkeyParagonLevels);
+        changed = true;
+    }
+
+    std::vector<std::string> queued;
+    {
+        std::lock_guard<std::mutex> lock(gQueueLock);
+        queued.swap(gQueue);
+    }
+    for (const std::string & line : queued)
+    {
+        Run(line.c_str(), *ptPlayer, ptPlayer->idPlayerACD, *ptACD);
         changed = true;
     }
 

@@ -34,10 +34,15 @@ int d3_window_pump(void);
 // if one is attached, combined with the keyboard.
 void d3_input_read(struct d3_pad_state * out);
 
-// Cheat hotkeys pressed since the last call (D3_HOTKEY_* bits), then cleared. Any thread.
-// Only the Cheats mod (D3_MOD_CHEATS) acts on them.
-enum { D3_HOTKEY_LEVEL_MAX = 1 << 0, D3_HOTKEY_PARAGON = 1 << 1, D3_HOTKEY_GOLD = 1 << 2 };
+// Hotkeys pressed since the last call (D3_HOTKEY_* bits), then cleared. Any thread.
+// d3_hotkeys_take takes the cheat keys (F1-F3), which only the Cheats mod (D3_MOD_CHEATS)
+// acts on; d3_hotkeys_take_mask takes the given ones. F5-F7 are the developer tools'
+// (D3_MOD_DEV_TOOLS).
+enum { D3_HOTKEY_LEVEL_MAX = 1 << 0, D3_HOTKEY_PARAGON = 1 << 1, D3_HOTKEY_GOLD = 1 << 2,
+       D3_HOTKEY_CAMERA = 1 << 3, D3_HOTKEY_TARGET_NAME = 1 << 4, D3_HOTKEY_STICK_VIEW = 1 << 5,
+       D3_HOTKEY_DESIGNER = 1 << 6 };
 int d3_hotkeys_take(void);
+int d3_hotkeys_take_mask(int mask);
 
 // Mouse events since the last call, oldest first, with the position as a fraction of the
 // window (0..1; the game's image fills the window). Any thread. Only the Mouse mod
