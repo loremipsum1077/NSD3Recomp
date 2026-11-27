@@ -94,6 +94,7 @@ if(D3_MOD_RUN_SPEED)
         --replace "pHero->flAttributesSprintSpeed);" "pHero->flAttributesSprintSpeed * ${D3_MOD_RUN_SPEED}f);")
 endif()
 
+set(_gfx_budget 390070272)  # GRAPHICS_PERSISTENT_MEMORY_SIZE; mods below may raise it
 # D3_MOD_RENDER_SIZE=2560x1440 draws the game at that size instead of the Switch's
 # docked 1600x900. The window shows whatever size is drawn, scaled to fit.
 set(D3_MOD_RENDER_SIZE "" CACHE STRING "Mod: the size the game draws at, as WIDTHxHEIGHT (empty: 1600x900)")
@@ -120,9 +121,43 @@ if(D3_MOD_RENDER_SIZE)
     elseif(_budget GREATER 2013265920)
         set(_budget 2013265920)
     endif()
-    math(EXPR _budget "${_budget} / 1048576 * 1048576")
+    math(EXPR _gfx_budget "${_budget} / 1048576 * 1048576")
+endif()
+
+# D3_MOD_GRAPHICS: picture improvements, comma-separated. Anisotropic and TextureDetail are
+# the Metal renderer's (CMakeLists.txt); these change the game:
+#   Shadows      the shadow map is 2048 texels a side instead of the Switch's 1024, so
+#                shadows have sharper edges (the shader's size constant keeps its ratio).
+#                4096 would need over 300 MB: the Switch's shadows use two 16-bit
+#                colour targets;
+#   Reflections  the game's reflection setting, which the Switch build hard-codes to off,
+#                is on, as on PC (water reflecting the scene). Not yet seen on water.
+# Ambient occlusion (SSAO) is not offered: the game can be made to draw it, but the
+# Switch's material shaders were built without reading it, so nothing changes.
+set(D3_MOD_GRAPHICS "" CACHE STRING "Mod: picture improvements (Anisotropic, TextureDetail, Sharpen, Shadows, Reflections; comma-separated); empty for off")
+string(REPLACE "," ";" _gfx_options "${D3_MOD_GRAPHICS}")
+if("Shadows" IN_LIST _gfx_options)
+    # Two placements of 1024 (one per shadow technique); after the first patch the
+    # indented one is the only 1024 left.
+    d3_patch_source("X/Client/SubObjectGfx.cpp"
+        --replace "            ptSubObjectGlobals->nShadowMapTexWidth = 1024$<SEMICOLON>"
+                  "            ptSubObjectGlobals->nShadowMapTexWidth = 2048$<SEMICOLON>"
+        --replace "        ptSubObjectGlobals->nShadowMapTexWidth = 1024$<SEMICOLON>"
+                  "        ptSubObjectGlobals->nShadowMapTexWidth = 2048$<SEMICOLON>")
+    d3_patch_source("X/Client/Definitions/PreferencesDefinition.cpp"
+        --replace "    case SHADOWPREF_HIGH_SOFT:" "    case SHADOWPREF_HIGH_SOFT: return 4096$<SEMICOLON>")
+    # Two colour targets (32 MB each) and a depth target (16 MB): 60 MB more than at
+    # 1024. The budget gets 128 MB more.
+    math(EXPR _gfx_budget "${_gfx_budget} + 134217728")
+endif()
+if("Reflections" IN_LIST _gfx_options)
+    d3_patch_source("X/Client/Definitions/PreferencesDefinition.cpp"
+        --replace "int32 VideoPrefs::GetReflectionQuality() const {"
+                  "int32 VideoPrefs::GetReflectionQuality() const { return REFLECTION_QUALITY_MAX$<SEMICOLON>")
+endif()
+if(NOT _gfx_budget EQUAL 390070272)
     d3_patch_source("X/Sigma/Memory/SigmaMemory.cpp"
-        --replace "GRAPHICS_PERSISTENT_MEMORY_SIZE = 0x17400000;" "GRAPHICS_PERSISTENT_MEMORY_SIZE = ${_budget};")
+        --replace "GRAPHICS_PERSISTENT_MEMORY_SIZE = 0x17400000;" "GRAPHICS_PERSISTENT_MEMORY_SIZE = ${_gfx_budget};")
 endif()
 
 # D3_MOD_CAMERA_DISTANCE=1.5 pulls the in-game camera back to that multiple of its

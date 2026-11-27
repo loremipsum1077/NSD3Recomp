@@ -8,7 +8,8 @@
 The run-time cache: the Metal driver looks for <hash>.metal in the cache folder for
 each shader the game creates, and writes <hash>.code when it is missing. --cache
 translates every .code that has no .metal yet (and writes <hash>.failed with the
-reason when it cannot).
+reason when it cannot; those are tried again each time, in case the translator has
+learned what they need).
 
 How it works. The GPU code is a register machine: 32-bit registers r0..r254 that
 hold either a float or an integer, and one-bit predicates p0..p6. The translation
@@ -299,6 +300,18 @@ class Translator:
             return self.set_u(o[0], self.u(o[1]))
         if op in ("fsetp", "isetp", "fset"):
             return self.compare(op, fl, o)
+        if op == "psetp":
+            # Two predicate outputs from three predicate inputs:
+            # dst = (a OP1 b) OP2 c, dst2 = !(a OP1 b) OP2 c.
+            ops = [x for x in fl if x in ("and", "or", "xor")]
+            if len(ops) != 2:
+                return None
+            join = {"and": "&&", "or": "||", "xor": "!="}
+            ab = f"({self.p(o[2])} {join[ops[0]]} {self.p(o[3])})"
+            c = self.p(o[4])
+            first = self.set_p(o[0], f"{ab} {join[ops[1]]} {c}")
+            second = self.set_p(o[1], f"!{ab} {join[ops[1]]} {c}")
+            return (first + " " + second).strip()
         if op == "iadd":
             return self.set_u(o[0], f"{self.u(o[1])} + {self.u(o[2])}")
         if op == "shl":
@@ -642,7 +655,7 @@ def fill_cache(folder):
     done = failed = 0
     for f in sorted(folder.glob("*.code")):
         out = f.with_suffix(".metal")
-        if out.exists() or f.with_suffix(".failed").exists():
+        if out.exists():
             continue
         try:
             t = Translator(CodeOnly(f.read_bytes()))
@@ -654,6 +667,7 @@ def fill_cache(folder):
             failed += 1
         else:
             out.write_text(text)
+            f.with_suffix(".failed").unlink(missing_ok=True)    # it failed with an older translator
             done += 1
     print(f"{done} shaders translated, {failed} could not be; cache now holds {len(list(folder.glob('*.metal')))}")
 

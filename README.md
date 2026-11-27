@@ -238,6 +238,19 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
 - `-DD3_MOD_RENDER_SIZE=2560x1440`: draw the game at that size instead of the
   Switch's docked 1600x900. The game's memory budget for screen-sized buffers is
   raised to match. Turn it off with `-DD3_MOD_RENDER_SIZE=`.
+- `-DD3_MOD_GRAPHICS=Anisotropic,TextureDetail,Sharpen,Shadows`: picture improvements,
+  comma-separated. `Anisotropic` turns on 16x anisotropic filtering in the Metal renderer,
+  so slanted textures such as the floor stay sharp into the distance. `TextureDetail`
+  makes textures use a sharper mip level (a bias of -0.5, added to the translated
+  shaders as they load, since Metal samplers have no bias). `Sharpen` runs a light
+  sharpening filter over the finished picture, kept within each pixel's neighbours so
+  edges get no halo; the game already smooths edges with its own FXAA pass. `Shadows`
+  draws the shadow map at 2048 texels a side instead of the Switch's 1024, and raises
+  the graphics memory budget to fit. `Reflections` turns on the game's reflection
+  setting, which the Switch build hard-codes to off; it runs, but has not yet been seen
+  on water. Ambient occlusion is not offered: the game can be made to draw it, but
+  the Switch's material shaders never read it. The game's clutter and physics detail
+  are already at their highest. Turn it off with `-DD3_MOD_GRAPHICS=`.
 - `-DD3_MOD_CAMERA_DISTANCE=1.5`: move the in-game camera to that multiple of its
   normal distance from the hero. Turn it off with `-DD3_MOD_CAMERA_DISTANCE=`.
 - `-DD3_MOD_SEASON=1`: make that season number active without the online service,

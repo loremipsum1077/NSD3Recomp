@@ -26,6 +26,7 @@
 #import <Foundation/Foundation.h>
 #import <ImageIO/ImageIO.h>
 #import <Metal/Metal.h>
+#include <string>
 #import <QuartzCore/CAMetalLayer.h>
 
 #include <mach/vm_page_size.h>
@@ -796,6 +797,17 @@ void TextureFlushTexels(TextureState * t, const void * view, const void * region
 
 // ---- samplers, and the tables that give textures and samplers their numbers ----
 
+// The Graphics mod (D3_MOD_GRAPHICS in CMakeLists.txt).
+#ifndef D3_MOD_GFX_ANISOTROPY
+#define D3_MOD_GFX_ANISOTROPY 0     // Anisotropic: 16
+#endif
+#ifndef D3_MOD_GFX_SHARPEN
+#define D3_MOD_GFX_SHARPEN 0.0f     // Sharpen: 0.6
+#endif
+#ifndef D3_MOD_GFX_MIP_BIAS
+#define D3_MOD_GFX_MIP_BIAS 0.0f    // TextureDetail: below 0 picks sharper mip levels
+#endif
+
 void SamplerBuilderSetDefaults(SamplerDesc * b)
 {
     memset(b, 0, sizeof(*b));
@@ -833,6 +845,12 @@ int SamplerInitialize(SamplerDesc * sampler, const SamplerDesc * builder)
         d.sAddressMode = Wrap(builder->wrap[0]);
         d.tAddressMode = Wrap(builder->wrap[1]);
         d.rAddressMode = Wrap(builder->wrap[2]);
+        // The Graphics mod's anisotropic filtering: textures seen at a slant, such as the
+        // floor, stay sharp into the distance. Only for filtered, mipmapped samplers.
+        if (D3_MOD_GFX_ANISOTROPY > 1 && d.minFilter == MTLSamplerMinMagFilterLinear && d.mipFilter != MTLSamplerMipFilterNotMipmapped)
+        {
+            d.maxAnisotropy = D3_MOD_GFX_ANISOTROPY;
+        }
         sampler->metal = (__bridge_retained void *)[g_device newSamplerStateWithDescriptor:d];
         return 1;
     }
@@ -1013,6 +1031,49 @@ NSString * CacheFolder()
 NSMutableDictionary<NSNumber *, id> * g_functions;      // code hash -> id<MTLFunction>, or NSNull when there is none
 unsigned g_missingShaders;
 
+// The Graphics mod's texture detail: a fragment shader's plain texture samples (those
+// that leave the mip level to the GPU) get a bias, so a sharper mip level is used.
+// Metal samplers have no bias of their own, so it goes into the translated source.
+NSString * WithMipBias(NSString * source, float bias)
+{
+    std::string in = source.UTF8String, out;
+    out.reserve(in.size() + 256);
+    char extra[32];
+    snprintf(extra, sizeof extra, ", bias(%.2f)", bias);
+    size_t at = 0;
+    for (;;)
+    {
+        size_t call = in.find(".sample(s", at);
+        if (call == std::string::npos)
+        {
+            break;
+        }
+        size_t open = call + 7, i = open, depth = 0;
+        for (; i < in.size(); i++)
+        {
+            depth += in[i] == '(';
+            if (in[i] == ')' && --depth == 0)
+            {
+                break;
+            }
+        }
+        if (i >= in.size())
+        {
+            break;
+        }
+        std::string args = in.substr(open, i - open);
+        out.append(in, at, i - at);
+        if (args.find("level(") == std::string::npos && args.find("bias(") == std::string::npos &&
+            args.find("gradient") == std::string::npos)
+        {
+            out += extra;
+        }
+        at = i;
+    }
+    out.append(in, at, std::string::npos);
+    return @(out.c_str());
+}
+
 // `instructionBytes` is how much of the code is instructions; literal constants and
 // padding follow, and must not be handed to the translator as if they were code.
 id<MTLFunction> FunctionFor(const void * code, size_t size, size_t instructionBytes, int * stage, uint64_t * hashOut)
@@ -1046,6 +1107,10 @@ id<MTLFunction> FunctionFor(const void * code, size_t size, size_t instructionBy
         return nil;
     }
     id<MTLFunction> function = nil;
+    if (source && *stage && D3_MOD_GFX_MIP_BIAS != 0.0f)
+    {
+        source = WithMipBias(source, D3_MOD_GFX_MIP_BIAS);
+    }
     if (source)
     {
         NSError * error = nil;
@@ -1798,13 +1863,22 @@ const char * kPresentSource =
     // The frame-rate counter (FpsOverlay below): a line of 3x5-pixel characters drawn
     // over a darkened box in the window's top-left corner. Each glyph is 15 bits, its top
     // row first; the order is "0123456789. FPSGUMC".
-    "struct Overlay { uint count; uint scale; uint code[40]; };\n"
+    "struct Overlay { uint count; uint scale; uint code[40]; float sharpen; };\n"
     "constant uint kGlyphs[19] = { 31599, 11415, 29671, 29647, 23497, 31183, 31215, 29257, 31727, 31695,\n"
     "                              2, 0, 31140, 31716, 31183, 31087, 23407, 24557, 31015 };\n"
     "fragment float4 present_fragment(V v [[stage_in]], texture2d<float> t [[texture(0)]],\n"
     "                                 constant Overlay & o [[buffer(0)]]) {\n"
     "    constexpr sampler s(filter::linear);\n"
     "    float3 c = t.sample(s, v.uv).rgb;\n"
+    // The Graphics mod's Sharpen: an unsharp mask over the four nearest source pixels,
+    // held within their range so edges get no bright or dark halo.
+    "    if (o.sharpen > 0.0) {\n"
+    "        float2 d = 1.0 / float2(t.get_width(), t.get_height());\n"
+    "        float3 n = t.sample(s, v.uv + float2(0, -d.y)).rgb, so = t.sample(s, v.uv + float2(0, d.y)).rgb;\n"
+    "        float3 e = t.sample(s, v.uv + float2(d.x, 0)).rgb, w = t.sample(s, v.uv + float2(-d.x, 0)).rgb;\n"
+    "        float3 lo = min(c, min(min(n, so), min(e, w))), hi = max(c, max(max(n, so), max(e, w)));\n"
+    "        c = clamp(c + o.sharpen * (4.0 * c - n - so - e - w) * 0.25, lo, hi);\n"
+    "    }\n"
     "    if (o.count > 0) {\n"
     "        uint2 p = uint2(v.position.xy);\n"
     "        uint pad = 2 * o.scale;\n"
@@ -1832,6 +1906,7 @@ struct FpsOverlay
     uint32_t count;
     uint32_t scale;
     uint32_t code[40];
+    float sharpen;      // the Graphics mod's Sharpen strength; 0 for none
 };
 
 double NowSeconds()
@@ -2020,6 +2095,7 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
                 FpsUpdate(overlay, lastPresentDone ? presentStart - lastPresentDone : 0, lastGpu,
                           static_cast<unsigned>(drawable.texture.height));
             }
+            overlay.sharpen = D3_MOD_GFX_SHARPEN;
             [pass setFragmentBytes:&overlay length:sizeof overlay atIndex:0];
             [pass drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
             [pass endEncoding];

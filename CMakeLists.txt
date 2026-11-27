@@ -74,6 +74,23 @@ if(D3_MOD_FPS)
     message(STATUS "Mod: frame-rate counter")
     target_compile_definitions(d3_platform PRIVATE D3_MOD_FPS=1)
 endif()
+# D3_MOD_GRAPHICS (set in cmake/DecompSources.cmake): the choices the Metal renderer
+# (src/gfx/metal/nvn_metal.mm) draws:
+#   Anisotropic    16x anisotropic filtering, so slanted textures such as the floor stay sharp;
+#   TextureDetail  textures use a sharper mip level (a bias of -0.5);
+#   Sharpen        a sharpening filter on the finished picture.
+if(D3_MOD_GRAPHICS)
+    message(STATUS "Mod: graphics ${D3_MOD_GRAPHICS}")
+    if("Anisotropic" IN_LIST _gfx_options)
+        target_compile_definitions(d3_platform PRIVATE D3_MOD_GFX_ANISOTROPY=16)
+    endif()
+    if("TextureDetail" IN_LIST _gfx_options)
+        target_compile_definitions(d3_platform PRIVATE D3_MOD_GFX_MIP_BIAS=-0.5f)
+    endif()
+    if("Sharpen" IN_LIST _gfx_options)
+        target_compile_definitions(d3_platform PRIVATE D3_MOD_GFX_SHARPEN=0.6f)
+    endif()
+endif()
 
 # Data that exists in the original program but that the decomp does not define yet,
 # written out as C from the player's own dump. The output is game content and stays

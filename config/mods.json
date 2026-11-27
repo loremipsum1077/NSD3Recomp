@@ -14,6 +14,23 @@
     "pattern": "^[0-9]{3,5}x[0-9]{3,5}$"
   },
   {
+    "id": "D3_MOD_GRAPHICS",
+    "title": "Graphics",
+    "group": "Display",
+    "description": "Picture improvements. Anisotropic filtering keeps slanted textures such as the floor sharp into the distance. Texture detail uses sharper versions of every texture. Sharpen runs a light sharpening filter over the finished picture (the game already smooths edges with its own FXAA). Sharper shadows draws shadows at 2048 instead of the Switch's 1024. Reflections turns on the game's reflection setting, which the Switch build leaves off; it has not yet been seen on water.",
+    "type": "multi",
+    "default": "Anisotropic,TextureDetail,Sharpen,Shadows",
+    "pattern": "^(Anisotropic|TextureDetail|Sharpen|Shadows|Reflections)(,(Anisotropic|TextureDetail|Sharpen|Shadows|Reflections))*$",
+    "choices": ["Anisotropic", "TextureDetail", "Sharpen", "Shadows", "Reflections"],
+    "labels": [
+      "Anisotropic filtering (16x)",
+      "Texture detail",
+      "Sharpen",
+      "Sharper shadows",
+      "Reflections (untested on water)"
+    ]
+  },
+  {
     "id": "D3_MOD_CAMERA_DISTANCE",
     "title": "Pulled-back camera",
     "group": "Display",
