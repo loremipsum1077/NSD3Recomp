@@ -305,6 +305,12 @@ if(D3_MOD_LOOSE_FILES)
                   "D3ModLooseRegister(Read(sPrepareSNOFilesFromTOC, sAppendEntryToSNOFiles, NULL) != FALSE)"
         --replace "BOOL SNOTOC::ReadIntoFileTable()"
                   "BOOL D3ModLooseRegister(BOOL)$<SEMICOLON> BOOL SNOTOC::ReadIntoFileTable()")
+    # The prefetcher reads only from the archives, so a file found only in the folder would
+    # stay "unloaded" and whatever waits on it (a scene on its lightmap) would wait forever.
+    # It is reported as loaded instead, and is read from the folder when it is first used.
+    d3_patch_source("X/Client/Prefetch.cpp"
+        --replace "    return PREFETCH_UNLOADED$<SEMICOLON>"
+                  "    { BOOL D3ModSnoIsLoose(int32, uint32)$<SEMICOLON> if (D3ModSnoIsLoose(ptSNOElement->tEntry.snoGroup, ptSNOElement->tEntry.uGuid)) return PREFETCH_LOADED$<SEMICOLON> } return PREFETCH_UNLOADED$<SEMICOLON>")
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/loose_files.cpp")
 endif()
 

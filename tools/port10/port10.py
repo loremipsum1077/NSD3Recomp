@@ -2,10 +2,10 @@
 """Ports the PvP arenas of the Diablo III 1.0 PC release to 2.7.7, as loose files for the
 Loose Files mod (D3_MOD_LOOSE_FILES, src/mods/loose_files.cpp).
 
-1.0 shipped arenas that later versions dropped. Their scenes, models, collision and marker
-sets are still on the 1.0 discs; this converts them from 1.0's 32-bit layouts to 2.7.7's
-64-bit ones with the two versions' own type descriptor tables, and builds a 2.7.7 world
-that places the scenes. Nothing of the game is in this repository: every input comes from
+1.0 shipped arenas that later versions dropped. Their scenes, models, collision, marker
+sets and textures are still on the 1.0 discs; this converts them from 1.0's 32-bit
+layouts to 2.7.7's 64-bit ones with the two versions' own type descriptor tables
+(textures in texture.py), and builds a 2.7.7 world that places the scenes. Nothing of the game is in this repository: every input comes from
 your own copies of the two versions, and the outputs stay on your computer.
 
     python3 tools/port10/port10.py setup [--disc build/D3C1.0] [--game game/2.7.7] [--d3 BUILD/d3]
@@ -43,6 +43,7 @@ sys.path.insert(0, str(HERE))
 import check  # noqa: E402
 import convert  # noqa: E402
 import cpk  # noqa: E402
+import texture  # noqa: E402
 import world  # noqa: E402
 
 ROOT = HERE.parent.parent
@@ -56,6 +57,7 @@ GROUPS = {
     "PhysMesh": (61, "PhysMesh", ".phm", "PhysMesh"),
     "MarkerSet": (24, "MarkerSet", ".mrk", "MarkerSet"),
     "Worlds": (48, "Worlds", ".wrl", "Worlds"),
+    "Textures": (44, "Textures", ".tex", "Textures"),  # texture.py, not convert.py
 }
 # 2.7.7 files whose headers (version, asset version, layout hash) the converted files get,
 # and the world every ported world is built from (the PvP dueling arena's).
@@ -65,6 +67,7 @@ SAMPLES = {
     "PhysMesh": "PhysMesh\\PvP_Duel_Small_Multi_E01_N01.phm",
     "MarkerSet": "MarkerSet\\PvP_Duel_Small_Multi_E01_N01.mrk",
     "Worlds": "Worlds\\PvP_Duel_Small.wrl",
+    "Textures": "Textures\\PvP_Duel_Small_Multi_W01_S01_worldMask.tex",
 }
 # The 1.0 arena worlds and the scenes each is made of: a name, or a prefix ending in _ for
 # tiled arenas (their tiles' names give the layout, world.tile_position).
@@ -248,6 +251,7 @@ class Port:
         self.queue = []        # 1.0 entries waiting to be converted
         self.done = {}         # 1.0 sno -> (group number, 2.7.7 sno, name)
         self.missing = {}      # sno -> count, named by a ported file but in neither version
+        self.skipped = {}      # 1.0 sno -> name, files that could not be converted
         self.next_free = max(game.max_id, max(disc.by_id)) + 1
 
     def number_for(self, entry):
@@ -284,7 +288,7 @@ class Port:
 
     def write(self, group, sno, name, data):
         num, folder, ext, root = GROUPS[group]
-        problems = check.check(root, data)
+        problems = check.check(root, data) if group != "Textures" else []
         for p in problems[:5]:
             say(f"    check: {p}")
         path = self.out / folder / f"{sno}{ext}"
@@ -296,13 +300,20 @@ class Port:
         while self.queue:
             group, sno, name, path = self.queue.pop(0)
             new = self.new_ids[sno]
-            data, log = convert.convert_file(GROUPS[group][3], open(path, "rb").read(),
-                                             self.game.sample(group), self.on_sno, self.has, sno=new)
+            src = open(path, "rb").read()
+            if group == "Textures":
+                data, log = texture.convert_texture(src, self.game.sample(group), new)
+            else:
+                data, log = convert.convert_file(GROUPS[group][3], src, self.game.sample(group),
+                                                 self.on_sno, self.has, sno=new)
             renumber = f" (as {new}: 2.7.7 uses {sno})" if new != sno else ""
             say(f"  {group}/{name}{renumber}")
             for line in log:
                 if not line.startswith("tag map copied"):
                     say("    " + line)
+            if data is None:
+                self.skipped[sno] = name
+                continue
             self.write(group, new, name, data)
 
     def arena(self, world_name):
@@ -365,6 +376,8 @@ def port(args):
             sys.exit(f"{a}: not an arena this knows (see list).")
         started.append(p.arena(names[a.lower()]))
     p.write_index()
+    if p.skipped:
+        say("Not converted (what names them goes without): " + ", ".join(sorted(p.skipped.values())))
     if p.missing:
         # Markers naming them were dropped; a model's missing texture leaves it undrawn.
         say("Named by the 1.0 files but not in 2.7.7 (markers naming them were dropped):")

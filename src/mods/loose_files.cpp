@@ -22,8 +22,11 @@
 // <file> as JSON and quits once the file list is read. tools/port10 reads the layouts of
 // 2.7.7's data files from it.
 //
-// The decomp's SNOFiles.cpp is patched to ask D3ModSnoOverride for every file it opens, and
-// SNOTOC.cpp to call D3ModLooseRegister once the game's file list is read.
+// D3_LOOSE_LOG=1 prints each file the game opens from the folder.
+//
+// The decomp's SNOFiles.cpp is patched to ask D3ModSnoOverride for every file it opens,
+// SNOTOC.cpp to call D3ModLooseRegister once the game's file list is read, and Prefetch.cpp
+// to ask D3ModSnoIsLoose before it reports a file as not loaded.
 #include "X/Common/SNO/SNOFiles.h"
 #include "X/Sigma/Files/XFiles.h"
 #include "X/Sigma/TypeDescriptor/TypeDescriptor.h"
@@ -34,7 +37,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 extern "C" const char * d3_save_dir(void);                             // src/nn/fs/fs.cpp
 extern "C" void d3_fs_mount(const char * name, const char * folder);  // src/nn/fs/fs.cpp
@@ -92,10 +97,42 @@ BOOL D3ModSnoOverride(int32 snoGroup, uint32 uGuid, LPCSTR szName, FileReference
         }
         char szPath[600];
         snprintf(szPath, sizeof szPath, "d3loose:/%s", szFile);
+        static const char * szLog = getenv("D3_LOOSE_LOG");
+        if (szLog && *szLog)
+        {
+            fprintf(stderr, "loose: %s\n", szFile);
+        }
         FileReferenceInit(tRef, szPath);
         return TRUE;
     }
     return FALSE;
+}
+
+// Whether <Group>/<sno><ext> is in the folder, for the prefetcher (X/Client/Prefetch.cpp is
+// patched to ask before it reports a file as not loaded). Asked from several threads and
+// often, so each answer is kept.
+BOOL D3ModSnoIsLoose(int32 snoGroup, uint32 uGuid)
+{
+    const std::string & sFolder = sLooseFolder();
+    if (sFolder.empty())
+    {
+        return FALSE;
+    }
+    static std::mutex sMutex;
+    static std::unordered_map<uint64_t, bool> sKnown;
+    uint64_t uKey = (static_cast<uint64_t>(static_cast<uint32>(snoGroup)) << 32) | uGuid;
+    std::lock_guard<std::mutex> tLock(sMutex);
+    auto it = sKnown.find(uKey);
+    if (it != sKnown.end())
+    {
+        return it->second;
+    }
+    char szFile[512];
+    snprintf(szFile, sizeof szFile, "%s/%s/%u%s", sFolder.c_str(), SNOGroupGetName(snoGroup), uGuid, SNOGetGroupExtension(snoGroup));
+    struct stat st;
+    bool bLoose = stat(szFile, &st) == 0;
+    sKnown[uKey] = bLoose;
+    return bLoose;
 }
 
 // D3_DUMP_TYPES=<file>: the type descriptors as JSON, then quit.

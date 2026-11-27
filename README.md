@@ -459,7 +459,8 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   the game's copy; one with a new number is added to the game's file list when the
   folder's `index.txt` names it (`<group> <SNO> <name>` per line). With the mod on,
   `D3_LOAD_WORLD=<world name>` starts the game in a world, and `D3_DUMP_TYPES=<file>`
-  writes the game's type descriptors as JSON and quits (for `tools/port10`).
+  writes the game's type descriptors as JSON and quits (for `tools/port10`);
+  `D3_LOOSE_LOG=1` prints each file the game opens from the folder.
   `src/mods/loose_files.cpp`; turn it off with `-DD3_MOD_LOOSE_FILES=`.
 
 ### 1.0 arenas
@@ -505,13 +506,15 @@ What carries over and what does not:
   tiles' walkable edges meet).
 - Markers that name something 2.7.7 no longer has are dropped: the arenas' health-globe
   spawners, a few lights, particles and props. `port` lists them.
-- Textures are not converted yet. Most arenas use textures 2.7.7 still has, but PvP_Map2
-  (a prototype map drawn with one texture atlas, which draws nothing) and
-  PvP_Octagon_Arena_01 lack their main texture, and several arenas lack their baked
-  lightmaps.
-- Seen in the game so far: PvP_Butcher_Arena_01 and PvP_Neph_Arena draw and play.
-  PvP_Keep_Arena and PvP_CraterST_Arena load but draw dark; the others load without
-  error but have not been looked at closely.
+- Textures the arenas have that 2.7.7 lacks (PvP_Map2's and PvP_Octagon_Arena_01's main
+  textures, the tiles' masks and baked lightmaps) are converted: DXT1, DXT3 and DXT5 with
+  one face, repackaged as the NVN texture packages 2.7.7 loads and tiled for the Switch's
+  GPU. Other formats are listed by `port` as not converted.
+- Seen in the game so far: PvP_Butcher_Arena_01 and PvP_Neph_Arena draw and play, Neph
+  with its converted textures. PvP_Map2, PvP_Octagon_Arena_01 and PvP_Keep_Arena draw,
+  but the converted lightmaps (and part of the Octagon's floor) show as blocky noise: how
+  1.0 lays out its lightmaps is not worked out yet. The others load without error but
+  have not been looked at closely.
 
 ## Measuring progress
 
