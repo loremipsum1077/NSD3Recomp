@@ -391,8 +391,13 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   (`X1_TEST_ChallengeTestWorld`, or `Axe FlatWorld`, a flat test map; any world's SNO
   name works). The game's own developer loader makes a throwaway account and hero for it,
   so your heroes are not loaded or changed. `D3_LOAD_WORLD=<name>` overrides it when
-  starting the game (empty for the menus). `src/mods/dev.cpp`; turn it off with
-  `-DD3_MOD_LOAD_WORLD=`.
+  starting the game (empty for the menus). `PvP_Duel_Small` is the PvP dueling world, a
+  foggy graveyard and ruined village the Switch never sends you to. `D3_SCENE_SWAP=245724:345754`
+  with `X1_TEST_ChallengeTestWorld` replaces that world's one scene with an unused test
+  scene: `345754` is `x1_westm_Monster_Affix_Test`, a Westmarch courtyard on a cliff, and
+  `121112` is `Test_EventLeavingLevelArea`, a bare test floor. The game's file list leaves
+  both scenes out, so the mod adds them when the list is read. `src/mods/dev.cpp`; turn it
+  off with `-DD3_MOD_LOAD_WORLD=`.
 - `-DD3_MOD_BLIZZCON=1`: the BlizzCon show-floor demo, as `-blizzcon` starts it: an
   offline party of level-70 demo heroes, and Continue goes straight into a Greater Rift.
   Your own heroes are not changed (the game's settings file may be). The demo's title

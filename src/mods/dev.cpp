@@ -6,8 +6,9 @@
 //     a local developer account with a new hero of each class and puts the party in that world
 //     (Console::Online::CreateDummySetup). An unknown name falls back to the usual menus.
 //     Worlds that ship and are not reached in normal play: "X1_TEST_ChallengeTestWorld" and
-//     "Axe FlatWorld". Any other world name works too. D3_LOAD_WORLD, when starting the game,
-//     overrides it (empty for the menus).
+//     "Axe FlatWorld". Any other world name works too, such as "PvP_Duel_Small", the PvP
+//     dueling world. D3_LOAD_WORLD, when starting the game, overrides it (empty for the menus).
+//     D3_SCENE_SWAP=<old>:<new> swaps a scene for another (see D3ModSceneSwap below).
 // D3_MOD_BLIZZCON=1  the BlizzCon show-floor demo, as the -blizzcon argument starts it: an
 //     offline party of level-70 demo heroes, the title screen goes straight to the main menu,
 //     and the game starts in a Greater Rift. The demo's title screen loaded fewer UI files
@@ -39,6 +40,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifndef D3_MOD_LOAD_WORLD
 #define D3_MOD_LOAD_WORLD ""
@@ -67,6 +69,80 @@ void D3ModDevStartup(CmdLineParams & tParams)
         tParams.tBitArray.Set(CMDLINE_BLIZZCON_BIT, TRUE);
         fprintf(stderr, "dev: BlizzCon demo\n");
     }
+}
+
+#include "X/Common/Definitions/SceneDefinition.h"
+
+static void D3ModSceneDescribe(unsigned int snoScene)
+{
+    ScopedSceneDefinitionLockR pdef((SNO)snoScene);
+    if (!pdef)
+    {
+        fprintf(stderr, "dev:   scene %u: not loaded\n", snoScene);
+        return;
+    }
+    const AABB & b = pdef->aabbBounds;
+    fprintf(stderr, "dev:   scene %u: appearance %d, centre %.0f,%.0f,%.0f, half-size %.0f,%.0f,%.0f, flags 0x%x\n",
+            snoScene, pdef->snoAppearance, b.wp.x, b.wp.y, b.wp.z, b.wvExt.x, b.wvExt.y, b.wvExt.z,
+            (unsigned)pdef->dwFlags);
+}
+
+#include "X/Common/SNO/SNOFiles.h"
+
+void SNOFileAddEntry(SNOTOC::TOCType eType, const SNOGroup snoGroup, const uint32 uGuid, LPCSTR szFileNameNoExtension);  // X/Common/SNO/SNOFiles.cpp
+
+// Two test scenes ship in Common.cpk with their files, but CoreTOC.dat, the list the game finds
+// files by number in, leaves them (and the one scene's appearance and collision mesh) out, so
+// a lookup gets a default, empty scene. They are added to the list once the game has read it
+// (SNOTOC::ReadIntoFileTable). Group numbers are CoreTOC.dat's: 33 scenes, 9 appearances,
+// 61 collision meshes.
+void D3ModSceneRegister()
+{
+    static const struct { SNOGroup snoGroup; uint32 uGuid; const char * szName; } kFiles[] = {
+        {33, 345754, "x1_westm_Monster_Affix_Test"},
+        {33, 121112, "Test_EventLeavingLevelArea"},
+        {9, 121115, "Test_EventLeavingLevelArea"},
+        {61, 128638, "Test_EventLeavingLevelArea"},
+    };
+    for (const auto & tFile : kFiles)
+    {
+        SNOFileAddEntry(SNOTOC::TT_CORE, tFile.snoGroup, tFile.uGuid, tFile.szName);
+    }
+}
+
+// D3_SCENE_SWAP=<old>:<new> (scene SNO numbers; <old> may be *) puts scene <new> wherever a
+// world places <old>, so a scene no world uses can be seen in a test world. The server's
+// SSceneAdd (X/Server/SScene.cpp) asks this for every scene it adds.
+unsigned int D3ModSceneSwap(unsigned int snoScene)
+{
+    static int snState;  // 0 unread, 1 off, 2 on
+    static unsigned int snoOld, snoNew;
+    static bool sbAny;
+    if (snState == 0)
+    {
+        snState = 1;
+        const char * sz = getenv("D3_SCENE_SWAP");
+        const char * szColon = sz ? strchr(sz, ':') : NULL;
+        if (szColon)
+        {
+            sbAny = sz[0] == '*';
+            snoOld = (unsigned int)strtoul(sz, NULL, 10);
+            snoNew = (unsigned int)strtoul(szColon + 1, NULL, 10);
+            snState = 2;
+        }
+    }
+    unsigned int snoResult = snoScene;
+    if (snState == 2 && (sbAny || snoScene == snoOld))
+    {
+        snoResult = snoNew;
+    }
+    if (snoResult != snoScene)
+    {
+        fprintf(stderr, "dev: scene %u -> %u\n", snoScene, snoResult);
+        D3ModSceneDescribe(snoScene);
+        D3ModSceneDescribe(snoResult);
+    }
+    return snoResult;
 }
 
 #if D3_MOD_DEV_TOOLS

@@ -255,6 +255,21 @@ if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS)
                       "        D3ModDesignerCommand(puszCurrentCommand)$<SEMICOLON> puszCurrentCommand += strlen(puszCurrentCommand)$<SEMICOLON>"
             --append "#include \"${PROJECT_SOURCE_DIR}/src/mods/designer_menu.inc\"")
     endif()
+    # Starting a game in the dueling world (D3_LOAD_WORLD=PvP_Duel_Small) gave the hero the
+    # arena's ghost buff before the hero's actor existed; it is skipped until there is one.
+    d3_patch_source("X/Server/SWorld.cpp"
+        --replace "        SPlayerGhostedBuffApply(ACDGet(ptPlayerToUse->idPlayerACD), FALSE)$<SEMICOLON>"
+                  "        if (ACDTryToGet(ptPlayerToUse->idPlayerACD)) SPlayerGhostedBuffApply(ACDGet(ptPlayerToUse->idPlayerACD), FALSE)$<SEMICOLON>")
+    # Two test scenes missing from the game's file list are added once it is read (dev.cpp).
+    d3_patch_source("X/Common/SNO/SNOTOC.cpp"
+        --replace "    return Read(sPrepareSNOFilesFromTOC, sAppendEntryToSNOFiles, NULL) != FALSE$<SEMICOLON>"
+                  "    BOOL bRead = Read(sPrepareSNOFilesFromTOC, sAppendEntryToSNOFiles, NULL) != FALSE$<SEMICOLON> { void D3ModSceneRegister()$<SEMICOLON> D3ModSceneRegister()$<SEMICOLON> } return bRead$<SEMICOLON>")
+    # D3_SCENE_SWAP (src/mods/dev.cpp): every scene the server adds is first offered to the mod.
+    d3_patch_source("X/Server/SScene.cpp"
+        --replace "SSceneID SSceneAdd(const SNO snoScene,"
+                  "SSceneID SSceneAdd(SNO snoScene,"
+        --replace "    SSceneID idSScene = tSGame.ptSScenes->ElementNew()$<SEMICOLON>"
+                  "    { unsigned int D3ModSceneSwap(unsigned int)$<SEMICOLON> snoScene = D3ModSceneSwap(snoScene)$<SEMICOLON> } SSceneID idSScene = tSGame.ptSScenes->ElementNew()$<SEMICOLON>")
     d3_patch_source("X/Common/Shell/MainNX64.cpp"
         --replace "    if (gtCmdLineParams.eTestType != TESTTYPE_NONE)"
                   "    { void D3ModDevStartup(CmdLineParams &)$<SEMICOLON> D3ModDevStartup(gtCmdLineParams)$<SEMICOLON> } if (gtCmdLineParams.eTestType != TESTTYPE_NONE)")
