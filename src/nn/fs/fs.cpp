@@ -119,6 +119,12 @@ extern "C" const char * d3_save_dir(void)
     return root.c_str();
 }
 
+// Mods mount extra host folders under names of their own (src/mods/loose_files.cpp: "d3loose").
+extern "C" void d3_fs_mount(const char * name, const char * folder)
+{
+    Mount(name, folder);
+}
+
 namespace nn { namespace fs {
 
 struct FileHandle { void * handle; };

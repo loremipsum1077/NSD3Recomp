@@ -228,7 +228,9 @@ set(D3_MOD_BLIZZCON "" CACHE STRING "Mod: the BlizzCon demo; 1 to turn on, empty
 # controller view, developer views the game still draws once switched on; F8 the designer
 # menu (src/mods/designer_menu.inc); F9 a free camera.
 set(D3_MOD_DEV_TOOLS "" CACHE STRING "Mod: developer views on F5-F7, the designer menu on F8 and a free camera on F9; 1 to turn on, empty for off")
-if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS)
+# The Loose Files mod (below) brings these patches too, so D3_LOAD_WORLD can start a ported
+# world.
+if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS OR D3_MOD_LOOSE_FILES)
     set(_dev_defs "D3_MOD_LOAD_WORLD=\"${D3_MOD_LOAD_WORLD}\"")
     if(D3_MOD_LOAD_WORLD)
         message(STATUS "Mod: start in world ${D3_MOD_LOAD_WORLD}")
@@ -285,6 +287,25 @@ if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS)
                   "    { void D3ModDevStartup(CmdLineParams &)$<SEMICOLON> D3ModDevStartup(gtCmdLineParams)$<SEMICOLON> } if (gtCmdLineParams.eTestType != TESTTYPE_NONE)")
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/dev.cpp")
     set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/dev.cpp" PROPERTIES COMPILE_DEFINITIONS "${_dev_defs}")
+endif()
+
+# D3_MOD_LOOSE_FILES=1 reads game data files from <save folder>/loose (or D3_SNO_DIR) before
+# the archives (src/mods/loose_files.cpp): a file there replaces the game's copy, and new ones
+# named in its index.txt are added to the game's file list. tools/port10 makes such files from
+# the 1.0 PC release's PvP arenas. Each file the game opens is first looked for in the folder.
+set(D3_MOD_LOOSE_FILES "" CACHE STRING "Mod: read game data files from <save folder>/loose before the archives; 1 to turn on, empty for off")
+if(D3_MOD_LOOSE_FILES)
+    message(STATUS "Mod: loose game data files")
+    d3_patch_source("X/Common/SNO/SNOFiles.cpp"
+        --replace "            HSARCHIVE hArchive = 0$<SEMICOLON>"
+                  "            HSARCHIVE hArchive = 0$<SEMICOLON> { BOOL D3ModSnoOverride(int32, uint32, LPCSTR, FileReference &)$<SEMICOLON> if (D3ModSnoOverride(tEntry.snoGroup, tEntry.uGuid, sSNOGroupNeedsName(tEntry.snoGroup) ? (LPCSTR)tEntry.GetName() : NULL, tRef)) { tSNOFileRef.tRef = tRef$<SEMICOLON> eLocale = XLOCALE_GLOBAL$<SEMICOLON> eSNOFileType = SNOFILETYPE_LOCAL$<SEMICOLON> return TRUE$<SEMICOLON> } }")
+    # After the dev mods' patch of the same line, which this one still matches.
+    d3_patch_source("X/Common/SNO/SNOTOC.cpp"
+        --replace "Read(sPrepareSNOFilesFromTOC, sAppendEntryToSNOFiles, NULL) != FALSE"
+                  "D3ModLooseRegister(Read(sPrepareSNOFilesFromTOC, sAppendEntryToSNOFiles, NULL) != FALSE)"
+        --replace "BOOL SNOTOC::ReadIntoFileTable()"
+                  "BOOL D3ModLooseRegister(BOOL)$<SEMICOLON> BOOL SNOTOC::ReadIntoFileTable()")
+    list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/loose_files.cpp")
 endif()
 
 # D3_MOD_MOUSE=1 lets the mouse play alongside the controller (src/mods/mouse.cpp): it
