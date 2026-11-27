@@ -423,6 +423,22 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   returns to the normal camera. The hero stays where they are, and only what the game
   has loaded around them is drawn, so far away there is nothing to see. It is the game's
   static camera view, moved every frame.
+  The free camera is also a photo mode. X (E) hides the HUD, Plus (Tab) pauses the game,
+  up and down on the d-pad (arrow keys) zoom by narrowing or widening the field of view,
+  left or right switches a grayscale filter, and holding B (Escape) slows the camera for
+  small moves. Y (Q) takes a photo three times the window's size each way (4800x2700 at
+  the usual 1600x900): the game's own tiled-screenshot setting, left from Blizzard's PC
+  tools, draws one ninth of the view per frame and the tiles are stitched together.
+  Minus (Backspace) takes a map: the area around where the camera looks, straight down
+  with no perspective, square to the world, one tile per frame, brightened so the layout
+  reads. The game pauses and the HUD hides while either is taken (a few seconds), and the
+  edge-darkening colour pass is left out so the tiles meet cleanly. Pictures go to
+  `~/Pictures/Diablo III` (`D3_PHOTO_DIR` to change it). `D3_PHOTO_TILES` (3) sets the
+  photo's size, `D3_MAP_SIZE` (360) and `D3_MAP_TILE` (60) the map's width and the width of
+  one tile in world units (the hero is about 2 tall), `D3_MAP_HEIGHT` (120) how far above
+  the hero the map camera sits, and `D3_MAP_GAMMA` (55, in percent; 100 for none) how much
+  the map is brightened. A whole town fits in about `D3_MAP_SIZE=700`. Only what the game
+  has loaded is in a map, which in towns is all of it.
   `src/mods/dev.cpp`, `src/mods/designer_menu.inc`; turn it off with `-DD3_MOD_DEV_TOOLS=`.
 - Test items: with the cheats on, the Cheats tab's item picker also lists the items
   Blizzard marked test-only or art-test (`ThorTest_Mojo`, `Sword_1H_PvP_70`,

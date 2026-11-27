@@ -32,6 +32,10 @@
 //         Only what the game has loaded around the hero is drawn, so far away there is
 //         nothing to see. The camera uses the game's static view (CS_STATIC_VIEW, which
 //         nothing else updates) and moves it with CinematographyCutTo every input update.
+//         It is also a photo mode: X hides the HUD (the game's AppRenderLayerHide), Plus
+//         pauses (GamePause), d-pad up and down change the field of view, left and right
+//         toggle grayscale, B held moves slowly, Y takes a photo and Minus a top-down map
+//         (see "Photo mode" below).
 //
 // The decomp's MainNX64.cpp is patched to call D3ModDevStartup() once, after the command line
 // is parsed, and with the tools on, InputNX64.cpp to call D3ModDevToolsUpdate() once per input
@@ -147,6 +151,7 @@ unsigned int D3ModSceneSwap(unsigned int snoScene)
 
 #if D3_MOD_DEV_TOOLS
 #include "X/Client/CGame.h"
+#include "X/Common/Game.h"
 #include "X/Client/CPlayer.h"
 #include "X/Common/ActorCommonData.h"
 #include "X/Common/GlobalSNO.h"
@@ -154,7 +159,9 @@ unsigned int D3ModSceneSwap(unsigned int snoScene)
 #include "X/Client/Camera/CameraManager.h"
 
 #include <math.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 void CinematographyCutToStaticView(const SNO snoObserver, const Vector3D & wpCenter);  // X/Client/Camera/Cinematography.cpp
 void CinematographyFixedView(RActorID idTargetRActor);                                 // X/Client/Camera/Cinematography.cpp
@@ -179,10 +186,22 @@ struct d3_pad_state {
     int leftX, leftY, rightX, rightY;
     int connected;
 };
-enum { D3_PAD_A = 0, D3_PAD_L = 6, D3_PAD_R = 7, D3_PAD_ZL = 8, D3_PAD_ZR = 9 };
+enum { D3_PAD_A = 0, D3_PAD_B, D3_PAD_X, D3_PAD_Y, D3_PAD_L = 6, D3_PAD_R, D3_PAD_ZL, D3_PAD_ZR, D3_PAD_PLUS, D3_PAD_MINUS,
+       D3_PAD_LEFT, D3_PAD_UP, D3_PAD_RIGHT, D3_PAD_DOWN };
 void d3_input_capture(int on);
 void d3_input_read_raw(struct d3_pad_state * out);
+// src/gfx/metal/nvn_metal.mm
+void d3_capture_next(const char * path);
+unsigned d3_captures_done(void);
+unsigned d3_frames_presented(void);
+int d3_image_stitch(const char * out, const char * const * tiles, int cols, int rows, int outWidth, int outHeight, float gamma);
+void d3_present_size(int * width, int * height);
 }
+void AppRenderLayerHide(int32 nFlag, BOOL bValue);  // X/Common/Game.cpp
+void AppDrawFlagSet(int32 nFlag, BOOL bValue);      // X/Common/Game.cpp
+BOOL AppDrawFlagIsSet(int32 nFlag);                 // X/Common/Game.cpp
+BOOL AppRenderLayerIsHidden(int32 nFlag);           // X/Common/Game.cpp
+enum { D3MOD_RENDERLAYER_UI = 10, D3MOD_RENDERLAYER_UI_OVERLAY = 19 };  // X/Client/Gfx/GfxCommon.h
 
 namespace {
 
@@ -192,7 +211,10 @@ struct FreeCamera {
     bool bOn;
     Vector3D wp;
     float flYaw, flPitch;  // radians; yaw from the world's X axis toward Y, pitch up from level
+    float flFOV;           // radians, vertical
     double flLastTime;
+    unsigned long long uLastButtons;
+    bool bHidUI, bPaused;  // photo mode's doing, undone when the free camera stops
 };
 FreeCamera stFree;
 
@@ -224,7 +246,265 @@ void sFreeCameraApply()
     PRTransform t;
     t.q.FromViewVector(sLook(stFree), cgwvZAxis, cgwvInitCameraForward, cgwvInitCameraRight, cgwvInitCameraUp);
     t.wp = stFree.wp;
+    CameraState cms = CameraManagerGetCameraState(CAMERA_CURRENT);
+    if (cms.aFOV != stFree.flFOV || !cms.bPerspective)
+    {
+        cms.bPerspective = TRUE;
+        cms.aFOV = stFree.flFOV;
+        cms.transform = t;
+        CinematographyStaticView(cms);
+    }
     CinematographyCutTo(t);
+}
+
+void sSetUIHidden(bool bHidden)
+{
+    AppRenderLayerHide(D3MOD_RENDERLAYER_UI, bHidden);
+    AppRenderLayerHide(D3MOD_RENDERLAYER_UI_OVERLAY, bHidden);
+}
+
+// ---- Photo mode: captures of several presented frames stitched into one picture ----
+//
+// A photo is the free camera's view at three times the size (D3_PHOTO_TILES across and
+// down): the game's own high-resolution screenshot setting (CameraManagerSetHighResScreenshotMode,
+// left over from Blizzard's PC tools) narrows the projection to one tile at a time, and
+// each tile is a separate frame. A map is the area around the camera seen straight down
+// with no perspective, D3_MAP_SIZE world units across, one tile of D3_MAP_TILE units per
+// frame. While either runs the game is paused and the HUD hidden. Pictures go to
+// D3_PHOTO_DIR (default ~/Pictures/Diablo III).
+
+enum CaptureKind { CAPTURE_NONE, CAPTURE_PHOTO, CAPTURE_MAP };
+enum { D3MOD_APP_DRAW_NO_FOG_BIT = 17 };  // X/Common/Game.h
+
+struct Capture {
+    CaptureKind eKind;
+    int nCols, nRows, nTile;
+    int nWaitFrames;          // presented frames to let pass before the next capture
+    unsigned uFrameMark;      // d3_frames_presented when the current tile was set
+    unsigned uCaptureMark;    // d3_captures_done when the current tile was asked for
+    bool bRequested;
+    bool bWasHidden, bWasPaused, bHadNoFog;
+    CameraState cmsBefore;    // the free camera's own, put back afterwards
+    char szOut[1024];
+    char aszTiles[256][1040];
+    // map
+    Vector3D wpCentre, wvRight, wvUp;
+    float flTileW, flTileH, flCameraZ;
+};
+Capture stCapture;
+
+int sEnvInt(const char * szName, int nDefault, int nMin, int nMax)
+{
+    const char * sz = getenv(szName);
+    int n = sz && *sz ? atoi(sz) : nDefault;
+    return n < nMin ? nMin : n > nMax ? nMax : n;
+}
+
+void sPhotoPath(char * szOut, size_t cb, const char * szKind)
+{
+    char szDir[900];
+    const char * szEnv = getenv("D3_PHOTO_DIR");
+    if (szEnv && *szEnv)
+    {
+        snprintf(szDir, sizeof szDir, "%s", szEnv);
+    }
+    else
+    {
+        const char * szHome = getenv("HOME");
+        snprintf(szDir, sizeof szDir, "%s/Pictures", szHome ? szHome : ".");
+        mkdir(szDir, 0755);
+        snprintf(szDir, sizeof szDir, "%s/Pictures/Diablo III", szHome ? szHome : ".");
+    }
+    mkdir(szDir, 0755);
+    time_t now = time(NULL);
+    struct tm tmNow;
+    localtime_r(&now, &tmNow);
+    char szStamp[32];
+    strftime(szStamp, sizeof szStamp, "%Y-%m-%d %H.%M.%S", &tmNow);
+    snprintf(szOut, cb, "%s/%s %s.png", szDir, szKind, szStamp);
+}
+
+void sCaptureSetTile()
+{
+    Capture & c = stCapture;
+    if (c.eKind == CAPTURE_PHOTO)
+    {
+        // The game's tiles count rows from the bottom of the picture; ours from the top.
+        int nCol = c.nTile % c.nCols, nRow = c.nTile / c.nCols;
+        CameraManagerSetHighResScreenshotMode((uint32)((c.nRows - 1 - nRow) * c.nCols + nCol), (uint32)c.nCols);
+        sFreeCameraApply();
+    }
+    else
+    {
+        int nCol = c.nTile % c.nCols, nRow = c.nTile / c.nCols;
+        float flX = (nCol - (c.nCols - 1) * 0.5f) * c.flTileW;
+        float flY = ((c.nRows - 1) * 0.5f - nRow) * c.flTileH;
+        PRTransform t;
+        t.q.FromViewVector(Vector3D(0.0f, 0.0f, -1.0f), c.wvUp, cgwvInitCameraForward, cgwvInitCameraRight, cgwvInitCameraUp);
+        t.wp = Vector3D(c.wpCentre.x + c.wvRight.x * flX + c.wvUp.x * flY, c.wpCentre.y + c.wvRight.y * flX + c.wvUp.y * flY, c.flCameraZ);
+        CameraState cms = CameraManagerGetCameraState(CAMERA_CURRENT);
+        CameraStateSetOrthographic(cms, t, c.flTileH, cms.flAspectRatio, 1.0f, 2000.0f, cms.rectViewport, cms.vecScale, cms.vecProjectionTranslate);
+        CinematographyStaticView(cms);
+        CinematographyCutTo(t);
+    }
+    snprintf(c.aszTiles[c.nTile], sizeof c.aszTiles[c.nTile], "%s.tile%d.png", c.szOut, c.nTile);
+    c.uFrameMark = d3_frames_presented();
+    c.bRequested = false;
+}
+
+void sCaptureStart(CaptureKind eKind, const ActorCommonData & tHero)
+{
+    Capture & c = stCapture;
+    c.eKind = eKind;
+    c.nTile = 0;
+    c.nWaitFrames = sEnvInt("D3_PHOTO_WAIT", 4, 2, 120);
+    c.bWasHidden = AppRenderLayerIsHidden(D3MOD_RENDERLAYER_UI) != FALSE;
+    c.bWasPaused = GameIsPaused() != FALSE;
+    c.cmsBefore = CameraManagerGetCameraState(CAMERA_CURRENT);
+    if (eKind == CAPTURE_PHOTO)
+    {
+        c.nCols = c.nRows = sEnvInt("D3_PHOTO_TILES", 3, 1, 8);
+        sPhotoPath(c.szOut, sizeof c.szOut, "Photo");
+    }
+    else
+    {
+        CameraState cms = CameraManagerGetCameraState(CAMERA_CURRENT);
+        float flSize = (float)sEnvInt("D3_MAP_SIZE", 360, 20, 4000);
+        c.flTileH = (float)sEnvInt("D3_MAP_TILE", 60, 5, 1000);
+        c.flTileW = c.flTileH * (cms.flAspectRatio > 0.1f ? cms.flAspectRatio : 16.0f / 9.0f);
+        c.nCols = (int)ceilf(flSize / c.flTileW);
+        c.nRows = (int)ceilf(flSize / c.flTileH);
+        while (c.nCols * c.nRows > 256)
+        {
+            c.flTileH *= 1.25f;
+            c.flTileW *= 1.25f;
+            c.nCols = (int)ceilf(flSize / c.flTileW);
+            c.nRows = (int)ceilf(flSize / c.flTileH);
+        }
+        // Square to the world (whose scenes are laid out on its axes), with the world axis
+        // nearest the view's forward at the top.
+        float flYaw = roundf(stFree.flYaw / (float)(M_PI / 2)) * (float)(M_PI / 2);
+        // Centred where the view's middle meets the ground at the hero's height.
+        float flGroundZ = tHero.GetWorldLocation().transform.wp.z;
+        Vector3D wvLook = sLook(stFree);
+        c.wpCentre = stFree.wp;
+        if (wvLook.z < -0.2f && stFree.wp.z > flGroundZ)
+        {
+            float flT = (stFree.wp.z - flGroundZ) / -wvLook.z;
+            c.wpCentre = Vector3D(stFree.wp.x + wvLook.x * flT, stFree.wp.y + wvLook.y * flT, flGroundZ);
+        }
+        c.wvUp = Vector3D(roundf(cosf(flYaw)), roundf(sinf(flYaw)), 0.0f);
+        c.wvRight = Vector3D(c.wvUp.y, -c.wvUp.x, 0.0f);
+        c.flCameraZ = tHero.GetWorldLocation().transform.wp.z + (float)sEnvInt("D3_MAP_HEIGHT", 120, 10, 2000);
+        sPhotoPath(c.szOut, sizeof c.szOut, "Map");
+    }
+    sSetUIHidden(true);
+    c.bHadNoFog = AppDrawFlagIsSet(D3MOD_APP_DRAW_NO_FOG_BIT) != FALSE;
+    if (eKind == CAPTURE_MAP)
+    {
+        AppDrawFlagSet(D3MOD_APP_DRAW_NO_FOG_BIT, TRUE);  // straight down from high up, fog would hide everything
+    }
+    if (!c.bWasPaused)
+    {
+        GamePause(TRUE);
+    }
+    fprintf(stderr, "dev: %s, %dx%d tiles, to %s\n", eKind == CAPTURE_PHOTO ? "photo" : "map", c.nCols, c.nRows, c.szOut);
+    sCaptureSetTile();
+}
+
+void sCaptureFinish()
+{
+    Capture & c = stCapture;
+    if (c.eKind == CAPTURE_PHOTO)
+    {
+        CameraManagerSetHighResScreenshotMode(0, 0);
+    }
+    int nWidth = 0, nHeight = 0;
+    d3_present_size(&nWidth, &nHeight);
+    if (nWidth <= 0 || nHeight <= 0)
+    {
+        nWidth = 1600;
+        nHeight = 900;
+    }
+    long nOutW = (long)nWidth * c.nCols, nOutH = (long)nHeight * c.nRows;
+    long nMax = sEnvInt("D3_PHOTO_MAX", 16384, 1024, 32768);
+    if (nOutW > nMax || nOutH > nMax)
+    {
+        double fl = (double)nMax / (nOutW > nOutH ? nOutW : nOutH);
+        nOutW = (long)(nOutW * fl);
+        nOutH = (long)(nOutH * fl);
+    }
+    const char * apszTiles[256];
+    for (int i = 0; i < c.nCols * c.nRows; i++)
+    {
+        apszTiles[i] = c.aszTiles[i];
+    }
+    // Maps are lit for play, by the hero's light and little else; D3_MAP_GAMMA (percent,
+    // default 55) brightens the dark parts so the layout can be read.
+    float flGamma = c.eKind == CAPTURE_MAP ? sEnvInt("D3_MAP_GAMMA", 55, 10, 300) / 100.0f : 1.0f;
+    d3_image_stitch(c.szOut, apszTiles, c.nCols, c.nRows, (int)nOutW, (int)nOutH, flGamma);
+    if (!getenv("D3_PHOTO_KEEP_TILES"))
+    {
+        for (int i = 0; i < c.nCols * c.nRows; i++)
+        {
+            unlink(c.aszTiles[i]);
+        }
+    }
+    sSetUIHidden(c.bWasHidden || stFree.bHidUI);
+    AppDrawFlagSet(D3MOD_APP_DRAW_NO_FOG_BIT, c.bHadNoFog);
+    if (!c.bWasPaused && !stFree.bPaused)
+    {
+        GamePause(FALSE);
+    }
+    c.eKind = CAPTURE_NONE;
+    CinematographyStaticView(c.cmsBefore);
+    sFreeCameraApply();  // back to the free camera's own view
+}
+
+// The game's own debug render modes, as photo filters (X/Common/Game.h DebugRenderMode):
+// none and grayscale. (DRM_RETRO, the Darkening of Tristram look, draws black here: its
+// post effect doesn't yet work on the Metal renderer.)
+void sNextFilter()
+{
+    static const DebugRenderMode keFilters[] = {DRM_DISABLED, DRM_GRAYSCALE};
+    static const char * const kszNames[] = {"none", "grayscale"};
+    const int kCount = 2;
+    int n = 0;
+    while (n < kCount && sgtAppGlobals.eDebugRenderMode != keFilters[n])
+    {
+        n++;
+    }
+    n = (n + 1) % kCount;
+    sgtAppGlobals.eDebugRenderMode = keFilters[n];
+    fprintf(stderr, "dev: filter %s\n", kszNames[n]);
+}
+
+// One step a frame: wait for the tile's frame to come round, ask for it, wait for it to be saved.
+void sCaptureUpdate()
+{
+    Capture & c = stCapture;
+    if (!c.bRequested)
+    {
+        if (d3_frames_presented() - c.uFrameMark >= (unsigned)c.nWaitFrames)
+        {
+            c.uCaptureMark = d3_captures_done();
+            d3_capture_next(c.aszTiles[c.nTile]);
+            c.bRequested = true;
+        }
+        return;
+    }
+    if (d3_captures_done() == c.uCaptureMark)
+    {
+        return;
+    }
+    if (++c.nTile < c.nCols * c.nRows)
+    {
+        sCaptureSetTile();
+    }
+    else
+    {
+        sCaptureFinish();
+    }
 }
 
 void sFreeCameraStart()
@@ -234,7 +514,10 @@ void sFreeCameraStart()
     stFree.wp = cms.transform.wp;
     stFree.flYaw = atan2f(wvLook.y, wvLook.x);
     stFree.flPitch = asinf(wvLook.z < -1.0f ? -1.0f : wvLook.z > 1.0f ? 1.0f : wvLook.z);
+    stFree.flFOV = cms.bPerspective && cms.aFOV > 0.05f ? cms.aFOV : 0.8f;
     stFree.flLastTime = sNow();
+    stFree.uLastButtons = ~0ull;  // buttons held when it starts do nothing until let go
+    stFree.bHidUI = stFree.bPaused = false;
     stFree.bOn = true;
     sbFixedCamera = false;
     CinematographyStaticView(cms);
@@ -244,6 +527,23 @@ void sFreeCameraStart()
 
 void sFreeCameraStop()
 {
+    if (stCapture.eKind != CAPTURE_NONE)
+    {
+        sCaptureFinish();
+    }
+    if (stFree.bHidUI)
+    {
+        sSetUIHidden(false);
+    }
+    if (stFree.bPaused)
+    {
+        GamePause(FALSE);
+    }
+    if (sgtAppGlobals.eDebugRenderMode == DRM_GRAYSCALE)
+    {
+        sgtAppGlobals.eDebugRenderMode = DRM_DISABLED;  // the filter is photo mode's
+    }
+    stFree.bHidUI = stFree.bPaused = false;
     stFree.bOn = false;
     d3_input_capture(0);
     CinematographyFixedView(LocalPlayerRActorGet());
@@ -262,9 +562,46 @@ void sFreeCameraUpdate()
 
     d3_pad_state pad;
     d3_input_read_raw(&pad);
+    unsigned long long uPressed = pad.buttons & ~stFree.uLastButtons;
+    stFree.uLastButtons = pad.buttons;
+    if (stCapture.eKind != CAPTURE_NONE)
+    {
+        sCaptureUpdate();  // the camera stays put until the picture is done
+        return;
+    }
+    if ((uPressed >> D3_PAD_X) & 1)
+    {
+        stFree.bHidUI = !stFree.bHidUI;
+        sSetUIHidden(stFree.bHidUI);
+        fprintf(stderr, "dev: HUD %s\n", stFree.bHidUI ? "hidden" : "shown");
+    }
+    if ((uPressed >> D3_PAD_LEFT) & 1 || (uPressed >> D3_PAD_RIGHT) & 1)
+    {
+        sNextFilter();
+    }
+    if ((uPressed >> D3_PAD_PLUS) & 1)
+    {
+        stFree.bPaused = !stFree.bPaused;
+        GamePause(stFree.bPaused);
+        fprintf(stderr, "dev: game %s\n", stFree.bPaused ? "paused" : "running");
+    }
+    ActorCommonData * ptHero = ACDTryToGet(LocalPlayerACDGet());
+    if (((uPressed >> D3_PAD_Y) & 1) && ptHero)
+    {
+        sCaptureStart(CAPTURE_PHOTO, *ptHero);
+        return;
+    }
+    if (((uPressed >> D3_PAD_MINUS) & 1) && ptHero)
+    {
+        sCaptureStart(CAPTURE_MAP, *ptHero);
+        return;
+    }
     const float kTurn = 1.8f;    // radians a second at full stick
     const float kSpeed = 30.0f;  // world units a second at full stick (the hero walks about 20)
-    float flSpeed = kSpeed * ((pad.buttons >> D3_PAD_A) & 1 ? 4.0f : 1.0f);
+    float flSpeed = kSpeed * ((pad.buttons >> D3_PAD_A) & 1 ? 4.0f : (pad.buttons >> D3_PAD_B) & 1 ? 0.25f : 1.0f);
+    float flZoom = ((pad.buttons >> D3_PAD_UP) & 1 ? -1.0f : 0.0f) + ((pad.buttons >> D3_PAD_DOWN) & 1 ? 1.0f : 0.0f);
+    stFree.flFOV *= expf(flZoom * 0.8f * flDt);  // up narrows the view (zooms in), down widens it
+    stFree.flFOV = stFree.flFOV < 0.1f ? 0.1f : stFree.flFOV > 2.2f ? 2.2f : stFree.flFOV;
 
     stFree.flYaw -= sAxis(pad.rightX) * kTurn * flDt;
     stFree.flPitch += sAxis(pad.rightY) * kTurn * flDt;
@@ -291,6 +628,11 @@ void sFreeCameraUpdate()
 
 }  // namespace
 
+bool D3ModPhotoPlainColor()  // asked by PostFX.cpp, on the render thread
+{
+    return stCapture.eKind != CAPTURE_NONE;
+}
+
 void D3ModDevToolsUpdate()
 {
     // In a game only; a key pressed before then waits.
@@ -300,6 +642,7 @@ void D3ModDevToolsUpdate()
         if (stFree.bOn)
         {
             stFree.bOn = false;  // the game ended: give the controller back
+            stCapture.eKind = CAPTURE_NONE;
             d3_input_capture(0);
         }
         return;

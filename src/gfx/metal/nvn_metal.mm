@@ -26,6 +26,9 @@
 #import <Foundation/Foundation.h>
 #import <ImageIO/ImageIO.h>
 #import <Metal/Metal.h>
+#include <atomic>
+#include <math.h>
+#include <mutex>
 #include <string>
 #import <QuartzCore/CAMetalLayer.h>
 
@@ -2036,6 +2039,120 @@ void MaybeScreenshot(id<MTLTexture> texture)
     }
 }
 
+// Photo mode (the developer tools' free camera, src/mods/dev.cpp) asks for the next image
+// the game presents to be saved (d3_capture_next), waits until it has been
+// (d3_captures_done), and stitches saved images into one (d3_image_stitch).
+std::mutex g_captureLock;
+std::string g_capturePath;
+std::atomic<unsigned> g_capturesDone;
+
+extern "C" void d3_capture_next(const char * path)
+{
+    std::lock_guard<std::mutex> lock(g_captureLock);
+    g_capturePath = path;
+}
+
+extern "C" unsigned d3_captures_done(void)
+{
+    return g_capturesDone.load();
+}
+
+extern "C" unsigned d3_frames_presented(void)
+{
+    return __atomic_load_n(&g_frame, __ATOMIC_RELAXED);
+}
+
+void MaybeCapture(id<MTLTexture> texture)
+{
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(g_captureLock);
+        path.swap(g_capturePath);
+    }
+    if (!path.empty())
+    {
+        SaveScreenshot(texture, path.c_str());
+        g_capturesDone++;
+    }
+}
+
+// Draws tiles[row * cols + col] (PNG files, row 0 at the top) side by side into one PNG of
+// outWidth by outHeight pixels, each tile scaled to its share, then each colour raised to
+// the power gamma (1 leaves it alone; below 1 brightens the darks). Returns nonzero on success.
+extern "C" int d3_image_stitch(const char * out, const char * const * tiles, int cols, int rows, int outWidth, int outHeight, float gamma)
+{
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(nullptr, outWidth, outHeight, 8, 0, space, kCGImageAlphaNoneSkipLast);
+    CGColorSpaceRelease(space);
+    if (!context)
+    {
+        return 0;
+    }
+    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+    for (int row = 0; row < rows; row++)
+    {
+        for (int col = 0; col < cols; col++)
+        {
+            const char * tile = tiles[row * cols + col];
+            CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, reinterpret_cast<const UInt8 *>(tile), strlen(tile), false);
+            CGImageSourceRef source = CGImageSourceCreateWithURL(url, nullptr);
+            CFRelease(url);
+            CGImageRef image = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
+            if (image)
+            {
+                // Core Graphics counts rows from the bottom; tile edges are rounded so
+                // neighbours meet without a gap.
+                double x0 = static_cast<double>(outWidth) * col / cols, x1 = static_cast<double>(outWidth) * (col + 1) / cols;
+                double y0 = static_cast<double>(outHeight) * (rows - 1 - row) / rows, y1 = static_cast<double>(outHeight) * (rows - row) / rows;
+                CGContextDrawImage(context, CGRectMake(floor(x0), floor(y0), ceil(x1) - floor(x0), ceil(y1) - floor(y0)), image);
+                CGImageRelease(image);
+            }
+            if (source)
+            {
+                CFRelease(source);
+            }
+        }
+    }
+    if (gamma > 0.0f && gamma != 1.0f)
+    {
+        uint8_t curve[256];
+        for (int i = 0; i < 256; i++)
+        {
+            curve[i] = static_cast<uint8_t>(lround(255.0 * pow(i / 255.0, gamma)));
+        }
+        uint8_t * row = static_cast<uint8_t *>(CGBitmapContextGetData(context));
+        size_t stride = CGBitmapContextGetBytesPerRow(context);
+        for (int y = 0; y < outHeight && row; y++, row += stride)
+        {
+            for (int x = 0; x < outWidth * 4; x++)
+            {
+                row[x] = curve[row[x]];
+            }
+        }
+    }
+    CGImageRef result = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, reinterpret_cast<const UInt8 *>(out), strlen(out), false);
+    CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, nullptr);
+    CFRelease(url);
+    bool ok = false;
+    if (dest && result)
+    {
+        CGImageDestinationAddImage(dest, result, nullptr);
+        ok = CGImageDestinationFinalize(dest);
+    }
+    if (dest)
+    {
+        CFRelease(dest);
+    }
+    if (result)
+    {
+        CGImageRelease(result);
+    }
+    fprintf(stderr, "metal: %s %s (%dx%d from %d tiles)\n", ok ? "stitched" : "could not stitch", out, outWidth, outHeight, cols * rows);
+    return ok;
+}
+
 // The size of the last image presented: the game's own pixel grid, which the window
 // shows stretched to fit. The Mouse mod maps window positions onto it.
 int g_presentWidth, g_presentHeight;
@@ -2111,6 +2228,10 @@ void PresentTexture(void * queue, WindowDesc * window, int index)
             [done commit];
             [done waitUntilCompleted];
             lastGpu = done.GPUEndTime > done.GPUStartTime ? done.GPUEndTime - done.GPUStartTime : 0;
+            if (source)
+            {
+                MaybeCapture(source);
+            }
             if (getenv("D3_SCREENSHOT") && source)
             {
                 // D3_SCREENSHOT_WINDOW=1 saves what the window shows (with the frame-rate

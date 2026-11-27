@@ -246,6 +246,16 @@ if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS)
         d3_patch_source("X/Client/Input/InputNX64.cpp"
             --replace "    if ( sgtNX64Globals.bWasControllerAppShown )"
                       "    { void D3ModDevToolsUpdate()$<SEMICOLON> D3ModDevToolsUpdate()$<SEMICOLON> } if ( sgtNX64Globals.bWasControllerAppShown )")
+        # Photo mode's pictures are stitched from tiles, so the colour-correction pass, whose
+        # saturation texture darkens the edges of the screen, is skipped while one is taken,
+        # as Blizzard's own tiled screenshots skipped it (APP_DRAW_HIGH_RES_SCREENSHOT_BIT).
+        d3_patch_source("X/Client/PostFX.cpp"
+            --replace "enum { POSTFX_ENABLE_HDR_BIT = 0, POSTFX_ENABLE_COLOR_CORRECTION_BIT = 1 }$<SEMICOLON>"
+                      "enum { POSTFX_ENABLE_HDR_BIT = 0, POSTFX_ENABLE_COLOR_CORRECTION_BIT = 1 }$<SEMICOLON> bool D3ModPhotoPlainColor()$<SEMICOLON>"
+            --replace "                if ((ptFXGlobals->dwFlags & (1 << POSTFX_ENABLE_COLOR_CORRECTION_BIT)) && !AppDrawFlagIsSet(APP_DRAW_HIGH_RES_SCREENSHOT_BIT))"
+                      "                if ((ptFXGlobals->dwFlags & (1 << POSTFX_ENABLE_COLOR_CORRECTION_BIT)) && !AppDrawFlagIsSet(APP_DRAW_HIGH_RES_SCREENSHOT_BIT) && !D3ModPhotoPlainColor())"
+            --replace "    if ((ptFXGlobals->dwFlags & (1 << POSTFX_ENABLE_COLOR_CORRECTION_BIT)) && !AppDrawFlagIsSet(APP_DRAW_HIGH_RES_SCREENSHOT_BIT))"
+                      "    if ((ptFXGlobals->dwFlags & (1 << POSTFX_ENABLE_COLOR_CORRECTION_BIT)) && !AppDrawFlagIsSet(APP_DRAW_HIGH_RES_SCREENSHOT_BIT) && !D3ModPhotoPlainColor())")
         # F8 the designer menu: the release dropped its setup and list code, and runs none of
         # its entries' commands; src/mods/designer_menu.inc supplies both.
         d3_patch_source("X/Client/UserInterface/Console/UIConsoleDesignerMenu.cpp"
