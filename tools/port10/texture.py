@@ -17,6 +17,11 @@ from convert import string_hash_i
 
 NVN_FORMAT = {9: 0x42, 10: 0x42, 11: 0x43, 12: 0x44}
 BLOCK_BYTES = {9: 8, 10: 8, 11: 16, 12: 16}
+# 1.0 splits each level's blocks into planes: every block's first part, then every block's
+# second part, and so on (DXT1: colour endpoints, then selectors). The 1.0 Mac client puts
+# the blocks back together as it loads them (GFXOpenGL, 0x721610). Each plane is given here
+# by how many bytes of each block it holds, in block order.
+PLANES = {9: (4, 4), 10: (4, 4), 11: (8, 4, 4), 12: (2, 6, 4, 4)}
 DATA_ALIGN = 0x200
 
 
@@ -49,6 +54,19 @@ def swizzle(plain, row_bytes, rows):
             n = min(16, row_bytes - x)
             at = row_base + (x // 64) * block_bytes + _tile_offset(x, y)
             out[at:at + n] = plain[src + x:src + x + n]
+    return bytes(out)
+
+
+def unplane(fmt, level, blocks):
+    """One 1.0 level (planes) -> plain rows of whole blocks."""
+    out = bytearray(len(level))
+    at, dst = 0, 0
+    for width in PLANES[fmt]:
+        plane = level[at:at + width * blocks]
+        for i in range(width):
+            out[dst + i::BLOCK_BYTES[fmt]] = plane[i::width]
+        at += width * blocks
+        dst += width
     return bytes(out)
 
 
@@ -97,12 +115,16 @@ def convert_texture(src, header, sno):
         need = (w + 3) // 4 * ((h + 3) // 4) * BLOCK_BYTES[fmt]
         if size < need:
             return None, ['level %d holds %d bytes, %d needed' % (i, size, need)]
-        levels.append(src[B + off:B + off + need])
+        levels.append(unplane(fmt, src[B + off:B + off + need], need // BLOCK_BYTES[fmt]))
     # The definition (0x278 bytes), then its image ids, frames and the package.
     d = bytearray(0x278)
     struct.pack_into('<i', d, 0x0, sno)                      # RequiredDefinitionHeader.snoHandle
     struct.pack_into('<8I', d, 0x10, fmt, width, height, 1, 1, 0, 0, len(levels) - 1)
-    struct.pack_into('<IIIIII', d, 0x258, 0, 1, struct.unpack_from('<I', src, B + 0x35c)[0], 0, 0, 1)
+    # 1.0's bCubemap, import flags (bit 0x10: ignore the mip offset) and machine time, at
+    # 0x35c; 2.7.7 keeps them at 0x258, then the console mip offset and lightmap V scale
+    # (0 is 1), volume slices 1 and 1.
+    struct.pack_into('<3I', d, 0x258, *struct.unpack_from('<3I', src, B + 0x35c))
+    struct.pack_into('<I', d, 0x26c, 1)                      # dwVolumeXSlices
     struct.pack_into('<I', d, 0x270, 1)                      # dwVolumeYSlices
     struct.pack_into('<2i', d, 0x228, *struct.unpack_from('<2i', src, B + 0x218))  # hotspot
     tail = bytearray()

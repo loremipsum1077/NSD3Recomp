@@ -508,13 +508,14 @@ What carries over and what does not:
   spawners, a few lights, particles and props. `port` lists them.
 - Textures the arenas have that 2.7.7 lacks (PvP_Map2's and PvP_Octagon_Arena_01's main
   textures, the tiles' masks and baked lightmaps) are converted: DXT1, DXT3 and DXT5 with
-  one face, repackaged as the NVN texture packages 2.7.7 loads and tiled for the Switch's
-  GPU. Other formats are listed by `port` as not converted.
+  one face. 1.0 stores each level's blocks split into planes (DXT1: all the colour
+  endpoints, then all the selectors), which are put back together, as the 1.0 client does
+  when it loads them; the levels are then tiled for the Switch's GPU and packaged as the
+  NVN texture packages 2.7.7 loads. Other formats are listed by `port` as not converted.
 - Seen in the game so far: PvP_Butcher_Arena_01 and PvP_Neph_Arena draw and play, Neph
-  with its converted textures. PvP_Map2, PvP_Octagon_Arena_01 and PvP_Keep_Arena draw,
-  but the converted lightmaps (and part of the Octagon's floor) show as blocky noise: how
-  1.0 lays out its lightmaps is not worked out yet. The others load without error but
-  have not been looked at closely.
+  with its converted textures. PvP_Map2, PvP_Octagon_Arena_01 (with its converted floor)
+  and PvP_Keep_Arena (with its converted lightmap) draw; Keep's surfaces are still
+  untextured. The others load without error but have not been looked at closely.
 
 ## Measuring progress
 
