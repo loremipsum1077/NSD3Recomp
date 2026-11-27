@@ -211,8 +211,18 @@ one decomp source file in place of the original (`cmake/DecompSources.cmake`,
 
 The easy way to choose them: double-click `Mods.command` (or run
 `python3 tools/mods.py`). It opens a page in your browser, served from this computer
-only, with a checkbox for each mod, a Build button and a Start game button. The mods
-it offers are listed in `config/mods.json`.
+only. Its Game version choice builds 2.7.7 (this checkout, in `build/macos`, or
+`build/macos-277` when `build/macos` holds another build) or 2.6.2. The first 2.6.2
+build sets up the 2.6.2 branches of both repositories as git worktrees in
+`build/2.6.2/`, generates the decomp's game data there from your 2.6.2 dump in `game/`,
+and builds with this checkout's `game/`, `save/` and `cache/shaders/`; 2.6.2 has fewer
+mods. `python3 tools/mods.py --version 2.6.2` selects it at start. The page has a
+switch for each mod grouped by kind, a side panel with what is switched
+on, a Build button and a Start game button, and tabs for the Cheats tools and the
+controls. The mods it offers are listed in `config/mods.json`: `group` is the heading
+a mod sits under, `parent` puts an option inside another mod's card (the world boss
+timer under Events), and `follows` hides an option the page sets itself: Seasons lists
+only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
 
 <img src="docs/images/mods-page.png" alt="The Mods page: higher resolution, pulled-back camera, faster heroes and offline seasons, with Build and Start game buttons" width="600">
 
@@ -224,8 +234,10 @@ it offers are listed in `config/mods.json`.
 - `-DD3_MOD_SEASON=1`: make that season number active without the online service,
   so the Season Journey and seasonal heroes are available. The game's data holds 12 sets
   of seasonal content that repeat, so 1 to 12 already cover every Season Journey; 14 to 37
-  also give that season's theme with `-DD3_MOD_THEME=Season`. Leaderboards and the other
-  online parts of seasons stay unavailable. Turn it off with `-DD3_MOD_SEASON=`.
+  also give that season's theme with `-DD3_MOD_THEME=Season` (the Mods page offers only
+  these). Seasonal heroes belong to the season they were made in, so changing the number
+  turns them into normal heroes, as when a season ended online. Leaderboards and the
+  other online parts of seasons stay unavailable. Turn it off with `-DD3_MOD_SEASON=`.
 - `-DD3_MOD_THEME=Season`: turn on a season theme. In 2.7.7 the themes are
   "community buffs" that Blizzard's servers switched on for a season, so offline none
   start. `Season` takes the theme of the season `D3_MOD_SEASON` makes active, from a table
@@ -309,7 +321,7 @@ it offers are listed in `config/mods.json`.
   game's speed. Turn it off again with `-DD3_MOD_RUN_SPEED=`.
 - `-DD3_MOD_CHEATS=1`: cheats for testing. In the game, F1 raises the hero to level 70,
   F2 adds 100 paragon levels and F3 adds 10,000,000 gold. While the game runs, the Mods
-  page's Cheats panel can do the same, add any amount of gold, give any item, found
+  page's Cheats tab can do the same, add any amount of gold, give any item, found
   by its in-game name, unlock Kanai's Cube, count greater rifts up to a tier as cleared
   solo (which opens Challenge Rifts), and give Horadric Caches from any act (for
   the game's current difficulty). Everything goes
