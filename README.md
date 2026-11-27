@@ -247,6 +247,17 @@ it offers are listed in `config/mods.json`.
   `DoubleRiftKeystones` double those rewards. The first two change the defaults of the
   settings the servers would have sent; the doubles are community buffs, given as the
   theme mod gives its own. `src/mods/events.cpp`; turn it off with `-DD3_MOD_EVENTS=`.
+  `WorldBoss` is our own event (`src/mods/worldboss.cpp`): every
+  `D3_MOD_WORLD_BOSS_MINUTES` minutes (10 by default), while a hero is out of town and not
+  in a rift, the game announces on screen and in chat that a world boss, one of the rift
+  guardians, waits in an area it names, and marks a random walkable spot elsewhere in the
+  hero's area on the minimap. Nothing is loaded or spawned then: the boss appears when the
+  hero gets near the spot, once the game has loaded that part of the map. It then shows on
+  the minimap as a quest monster, and its death is announced. The timer starts again once
+  it dies or the hero leaves its area. For testing, when starting the game:
+  `D3_WORLD_BOSS_SECONDS` overrides the time, `D3_WORLD_BOSS_TEST=1` lets a boss come in
+  town, `D3_WORLD_BOSS_NEAR=1` puts the spot close by, `D3_WORLD_BOSS_SPOT=x,y` picks it,
+  and `D3_WORLD_BOSS_TRACE=1` logs more.
 - `-DD3_MOD_CHALLENGE=rotate`: Challenge Rifts offline. On the Switch the game
   downloaded each week's challenge as two files from Blizzard's servers:
   `challengerift_config.dat` (the challenge's number, times and orb multiplier) and

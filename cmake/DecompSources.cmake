@@ -238,9 +238,12 @@ endif()
 
 # D3_MOD_EVENTS turns on events Blizzard's servers ran, comma-separated (src/mods/events.cpp):
 # Anniversary (the Darkening of Tristram and the anniversary buff), CowLevel, and the
-# DoubleBloodShards and DoubleRiftKeystones community buffs. The first two change the
+# DoubleBloodShards and DoubleRiftKeystones community buffs, and WorldBoss, our own event
+# (src/mods/worldboss.cpp): every D3_MOD_WORLD_BOSS_MINUTES a rift guardian is announced and
+# its spot in the hero's area marked on the minimap; it appears when the hero gets there. The first two change the
 # defaults of the cvars the lobby would have set; the buffs go to the season theme mod.
-set(D3_MOD_EVENTS "" CACHE STRING "Mod: events (Anniversary, CowLevel, DoubleBloodShards, DoubleRiftKeystones; comma-separated); empty for off")
+set(D3_MOD_EVENTS "" CACHE STRING "Mod: events (Anniversary, CowLevel, DoubleBloodShards, DoubleRiftKeystones, WorldBoss; comma-separated); empty for off")
+set(D3_MOD_WORLD_BOSS_MINUTES "10" CACHE STRING "Mod: minutes between world bosses (with D3_MOD_EVENTS=WorldBoss)")
 set(_theme_keys "${D3_MOD_THEME}")
 if(D3_MOD_EVENTS)
     string(REPLACE "," ";" _events "${D3_MOD_EVENTS}")
@@ -259,8 +262,16 @@ if(D3_MOD_EVENTS)
             else()
                 set(_theme_keys "${_event}")
             endif()
+        elseif(_event STREQUAL "WorldBoss")
+            if(NOT D3_MOD_WORLD_BOSS_MINUTES MATCHES "^[1-9][0-9]*$")
+                message(FATAL_ERROR "D3_MOD_WORLD_BOSS_MINUTES must be a whole number of minutes, got '${D3_MOD_WORLD_BOSS_MINUTES}'")
+            endif()
+            list(APPEND D3_SHARED_HOOKS WORLDBOSS)  # strings, update
+            list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/worldboss.cpp")
+            set_source_files_properties("${PROJECT_SOURCE_DIR}/src/mods/worldboss.cpp" PROPERTIES COMPILE_DEFINITIONS
+                "D3_MOD_WORLD_BOSS_MINUTES=${D3_MOD_WORLD_BOSS_MINUTES}")
         else()
-            message(FATAL_ERROR "D3_MOD_EVENTS: unknown event '${_event}' (Anniversary, CowLevel, DoubleBloodShards, DoubleRiftKeystones)")
+            message(FATAL_ERROR "D3_MOD_EVENTS: unknown event '${_event}' (Anniversary, CowLevel, DoubleBloodShards, DoubleRiftKeystones, WorldBoss)")
         endif()
     endforeach()
     message(STATUS "Mod: events ${D3_MOD_EVENTS}")

@@ -169,22 +169,32 @@
   {
     "id": "D3_MOD_EVENTS",
     "title": "Events (offline)",
-    "description": "Turn on events Blizzard's servers ran. The Anniversary opens the Darkening of Tristram (its portal is in New Tristram) and gives the anniversary experience and magic-find buff; without this it still opens every January, from the game's own dates. The cow level is the game's not-a-cow-level easter egg. Double blood shards and double rift keystones double those rewards. Events apply to every hero.",
+    "description": "Turn on events Blizzard's servers ran. The Anniversary opens the Darkening of Tristram (its portal is in New Tristram) and gives the anniversary experience and magic-find buff; without this it still opens every January, from the game's own dates. The cow level is the game's not-a-cow-level easter egg. Double blood shards and double rift keystones double those rewards. Events apply to every hero. World bosses is our own event: every few minutes, while you are out of town and not in a rift, the game announces that a rift guardian waits somewhere else in your area, named on screen and in chat, and marks the spot on the minimap. The boss appears when you get there, then shows on the minimap as a quest monster; its death is announced too.",
     "type": "multi",
     "default": "Anniversary",
-    "pattern": "^(Anniversary|CowLevel|DoubleBloodShards|DoubleRiftKeystones)(,(Anniversary|CowLevel|DoubleBloodShards|DoubleRiftKeystones))*$",
+    "pattern": "^(Anniversary|CowLevel|DoubleBloodShards|DoubleRiftKeystones|WorldBoss)(,(Anniversary|CowLevel|DoubleBloodShards|DoubleRiftKeystones|WorldBoss))*$",
     "choices": [
       "Anniversary",
       "CowLevel",
       "DoubleBloodShards",
-      "DoubleRiftKeystones"
+      "DoubleRiftKeystones",
+      "WorldBoss"
     ],
     "labels": [
       "Anniversary: the Darkening of Tristram",
       "Cow level",
       "Double blood shards",
-      "Double rift keystones"
+      "Double rift keystones",
+      "World bosses"
     ]
+  },
+  {
+    "id": "D3_MOD_WORLD_BOSS_MINUTES",
+    "title": "Minutes between world bosses",
+    "description": "With the World bosses event on, how many minutes pass between one boss's death (or your leaving its area) and the next announcement.",
+    "type": "number",
+    "default": "10",
+    "pattern": "^[1-9][0-9]{0,2}$"
   },
   {
     "id": "D3_MOD_CHALLENGE",

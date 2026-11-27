@@ -20,6 +20,10 @@ void D3ModThemeUpdate();  // src/mods/theme.cpp
 #if D3_HOOK_EVENTS
 void D3ModEventsUpdate();  // src/mods/events.cpp
 #endif
+#if D3_HOOK_WORLDBOSS
+const char * D3ModWorldBossString(SNO snoStringList, const char * szLabel);  // src/mods/worldboss.cpp
+void D3ModWorldBossUpdate();
+#endif
 
 // As each GameBalance file is loaded, before its rows are registered: rows may be added.
 void D3ModExtendGameBalance(GameBalanceDefinition * pdefGB, int32 & nCount, void *& pTable)
@@ -48,6 +52,12 @@ const char * D3ModString(SNO snoStringList, const char * szLabel)
         szText = D3ModCorruptString(snoStringList, szLabel);
     }
 #endif
+#if D3_HOOK_WORLDBOSS
+    if (!szText)
+    {
+        szText = D3ModWorldBossString(snoStringList, szLabel);
+    }
+#endif
     return szText;
 }
 
@@ -65,5 +75,8 @@ void D3ModServerUpdate()
 #endif
 #if D3_HOOK_EVENTS
     D3ModEventsUpdate();
+#endif
+#if D3_HOOK_WORLDBOSS
+    D3ModWorldBossUpdate();
 #endif
 }
