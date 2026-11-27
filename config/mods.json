@@ -371,5 +371,14 @@
     "type": "toggle",
     "default": "1",
     "pattern": "^1$"
+  },
+  {
+    "id": "D3_MOD_LOOSE_FILES",
+    "title": "Loose files and 1.0 arenas",
+    "group": "Developer",
+    "description": "Read game data files from the loose folder in your save folder before the game's archives, so files made outside the game can replace or add to its own. The 1.0 arenas tab uses it to play the PvP arenas of Diablo III's 2012 PC release, converted from your own 1.0 discs.",
+    "type": "toggle",
+    "default": "1",
+    "pattern": "^1$"
   }
 ]

@@ -20,6 +20,10 @@ The page builds one of two game versions:
          the mods that branch has, which are fewer.
 
 --version picks the one selected at start (2.7.7 by default).
+
+With the Loose Files mod built, a "1.0 arenas" tab runs tools/port10/port10.py: it sets up
+from the 1.0 discs in build/D3C1.0, ports arenas into the save folder's loose/ folder and
+starts the game in one.
 """
 import argparse
 import json
@@ -127,6 +131,40 @@ def cheats_dir():
 
 def theme_dir():
     return save_dir() / "theme"
+
+
+# The 1.0 arenas tab (tools/port10/port10.py).
+PORT10 = ROOT / "tools" / "port10" / "port10.py"
+PORT10_WORK = ROOT / "build" / "port10"
+DISC = ROOT / "build" / "D3C1.0"
+sys.path.insert(0, str(PORT10.parent))
+try:
+    from port10 import ARENAS
+except ImportError:
+    ARENAS = {}
+
+
+def arenas_status():
+    ported = set()
+    try:
+        for line in (save_dir() / "loose" / "index.txt").read_text().splitlines():
+            parts = line.split(None, 2)
+            if len(parts) == 3 and parts[0] == "48":
+                ported.add(parts[2].lower())
+    except OSError:
+        pass
+    ready = all((PORT10_WORK / n).exists() for n in ("types10.json", "types277.json", "toc.json"))
+    return {"disc": DISC.is_dir(), "ready": ready, "porting": state.get("porting", False),
+            "arenas": [{"name": n, "ported": n.lower() in ported} for n in ARENAS]}
+
+
+def port10(arguments):
+    try:
+        ok = run([sys.executable, PORT10] + arguments)
+        say("Done." if ok else "port10 stopped; see above.")
+    finally:
+        with lock:
+            state["porting"] = False
 
 
 def read_json(path, fallback):
@@ -414,6 +452,7 @@ PAGE = r"""<!doctype html>
     <button role="tab" data-tab="mods" aria-selected="true">Mods</button>
     <button role="tab" data-tab="cheats" id="cheatstab" hidden>Cheats</button>
     <button role="tab" data-tab="theme" id="themetab" hidden>Season theme</button>
+    <button role="tab" data-tab="arenas" id="arenastab" hidden>1.0 arenas</button>
     <button role="tab" data-tab="controls">Controls</button>
   </nav>
 </header>
@@ -464,6 +503,13 @@ PAGE = r"""<!doctype html>
   <div class="row" style="display:flex; gap:8px; margin-bottom:12px"><button data-theme="off">No theme</button><button data-theme="default">The build's theme</button></div>
   <div class="tablewrap"><table id="themes"></table></div>
   <p class="note">The game switches within a second, on every hero in the game, and keeps the choice for the next start. With any theme on, the Altar of Rites and Visions of Enmity portals are on too, as in 2.7.7. Season 23's theme, followers that fight like heroes, is always on and has no switch.</p>
+</section>
+
+<section data-panel="arenas" id="arenas" hidden>
+  <p id="arenastate"></p>
+  <div class="row" style="display:flex; gap:8px; margin-bottom:12px"><button id="arenasetup">Set up</button></div>
+  <div class="tablewrap"><table id="arenalist"></table></div>
+  <p class="note">The PvP arenas of Diablo III's 1.0 PC release (2012), converted from your own 1.0 discs by tools/port10. Put the discs' contents in build/D3C1.0 (Tome-1, Tome-2, Tome-3), then Set up once: it reads the 1.0 and 2.7.7 file layouts and takes a minute. Port converts an arena into the loose folder in your save folder; Play starts the game in it with a throwaway developer hero. Nothing converted leaves your computer. Some arenas draw incompletely: textures 2.7.7 no longer has are not converted yet, and actors it dropped (the arenas' health globes) are left out. Progress shows in the build output.</p>
 </section>
 
 <section data-panel="controls" hidden>
@@ -710,6 +756,34 @@ $("theme").addEventListener("click", async e => {
   $("themestate").textContent = r.error ? r.error : "Sent. The game switches within a second.";
 });
 
+// 1.0 arenas.
+let arenasDrawn = "";
+function drawArenas(s) {
+  $("arenastab").hidden = !s.loose;
+  if (!s.loose) { if (!$("arenas").hidden) showTab("mods"); return; }
+  const a = s.arenas;
+  $("arenastate").textContent = a.porting ? "Working… see the build output." :
+    !a.disc ? "Put the 1.0 discs' contents in build/D3C1.0 first." :
+    !a.ready ? (s.built ? "Set up once to read the two versions' layouts." : "Build first, then set up.") : "Ready.";
+  $("arenasetup").disabled = a.porting || !a.disc || !s.built || s.running;
+  const key = JSON.stringify([a, s.running]);
+  if (key === arenasDrawn) return;
+  arenasDrawn = key;
+  $("arenalist").innerHTML = "<tr><th>Arena</th><th></th></tr>" + a.arenas.map(r =>
+    `<tr><td>${esc(r.name)}</td><td><button data-port="${esc(r.name)}"${a.porting || !a.ready ? " disabled" : ""}>${r.ported ? "Port again" : "Port"}</button> ` +
+    `<button data-arena="${esc(r.name)}"${!r.ported || s.running || a.porting ? " disabled" : ""}>Play</button></td></tr>`).join("");
+}
+$("arenas").addEventListener("click", async e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  let r;
+  if (b.id === "arenasetup") r = await (await fetch(`/port10?t=${T}`, {method: "POST", body: JSON.stringify({action: "setup"})})).json();
+  else if (b.dataset.port) r = await (await fetch(`/port10?t=${T}`, {method: "POST", body: JSON.stringify({action: "port", arena: b.dataset.port})})).json();
+  else if (b.dataset.arena) r = await (await fetch(`/play?t=${T}`, {method: "POST", body: JSON.stringify({world: b.dataset.arena})})).json();
+  if (r && r.error) $("arenastate").textContent = r.error;
+  else if (r && !b.dataset.arena) $("logbox").open = true;
+});
+
 // Build and play.
 async function poll() {
   let s;
@@ -730,6 +804,7 @@ async function poll() {
   $("version").disabled = s.building || s.running;
   drawCheats(s);
   drawTheme(s);
+  drawArenas(s);
   if (s.lines.length) {
     const log = $("log");
     log.textContent += s.lines.join("\n") + "\n"; shown += s.lines.length; log.scrollTop = log.scrollHeight;
@@ -737,7 +812,7 @@ async function poll() {
   if (s.building && !wasBuilding) $("logbox").open = true;
   if (!s.building && wasBuilding && s.result === "failed") $("logbox").open = true;
   wasBuilding = s.building;
-  $("build").disabled = s.building;
+  $("build").disabled = s.building || s.arenas.porting;
   $("play").disabled = s.building || !s.built || s.running;
   $("play").textContent = s.running ? "Running" : "Start game";
   const st = $("status");
@@ -799,7 +874,8 @@ class Handler(BaseHTTPRequestHandler):
                         cheats=bool(values.get("D3_MOD_CHEATS")), cheat_status=cheats_status(),
                         theme=theme_built(values), theme_status=read_json(theme_dir() / "status.json", None),
                         themes=read_json(theme_dir() / "themes.json", []),
-                        rules=[{"name": n, "title": t, "text": d, "normal": on} for n, t, d, on in RULES], rule_states=read_rules())
+                        rules=[{"name": n, "title": t, "text": d, "normal": on} for n, t, d, on in RULES], rule_states=read_rules(),
+                        loose=bool(values.get("D3_MOD_LOOSE_FILES")) and current_version() == "2.7.7", arenas=arenas_status())
             return self.send(body)
         if self.path.startswith("/items"):
             try:
@@ -828,7 +904,7 @@ class Handler(BaseHTTPRequestHandler):
             if game_running():
                 return self.send({"error": "Close the game before building."})
             with lock:
-                if state["building"]:
+                if state["building"] or state.get("porting"):
                     return self.send({"error": "A build is already running."})
                 state["building"], state["result"] = True, ""
             threading.Thread(target=build, args=(current_version(), values), daemon=True).start()
@@ -890,9 +966,37 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send({"error": "Wait for the build to finish."})
                 state["version"], state["result"] = chosen, ""
             return self.send({"ok": True})
+        if self.path.startswith("/port10"):
+            try:
+                asked = json.loads(body or b"{}")
+                action, arena = str(asked.get("action", "")), str(asked.get("arena", ""))
+            except (ValueError, AttributeError):
+                action, arena = "", ""
+            if action == "setup":
+                if not game_path().exists():
+                    return self.send({"error": "Build first."})
+                arguments = ["setup", "--d3", str(game_path())]
+            elif action == "port" and arena in ARENAS:
+                arguments = ["port", arena, "--out", str(save_dir() / "loose")]
+            else:
+                return self.send({"error": "unknown request"}, code=400)
+            if game_running():
+                return self.send({"error": "Close the game first."})
+            with lock:
+                if state["building"] or state.get("porting"):
+                    return self.send({"error": "Wait for the current job to finish."})
+                state["porting"] = True
+            threading.Thread(target=port10, args=(arguments,), daemon=True).start()
+            return self.send({"ok": True})
         if self.path.startswith("/play"):
-            if state["building"] or not game_path().exists():
+            if state["building"] or state.get("porting") or not game_path().exists():
                 return self.send({"error": "Build first."})
+            try:
+                world = str(json.loads(body or b"{}").get("world", ""))
+            except (ValueError, AttributeError):
+                world = ""
+            if world and world not in ARENAS:
+                return self.send({"error": "unknown arena"}, code=400)
             if not game_running():
                 # The game's output, including the crash handler's call stack, goes to
                 # game.log in the build directory; the run before is kept as game.prev.log.
@@ -900,7 +1004,11 @@ class Handler(BaseHTTPRequestHandler):
                 if log.exists():
                     log.replace(log.with_name("game.prev.log"))
                 with open(log, "wb") as out:
-                    game = subprocess.Popen([str(game_path())], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+                    env = dict(os.environ)
+                    if world:
+                        env["D3_LOAD_WORLD"] = world  # src/mods/dev.cpp
+                    game = subprocess.Popen([str(game_path())], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT,
+                                            start_new_session=True, env=env)
             return self.send({"ok": True})
         return self.send({"error": "unknown"}, code=404)
 

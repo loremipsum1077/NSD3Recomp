@@ -91,7 +91,7 @@ decompiled game source also stays in its own repository and is referenced by pat
 | `src/shader/` | Switch GPU instruction table used by the shader translator |
 | `cmake/` | Build helpers, including how the decomp is located and how mods patch it |
 | `config/` | Data symbols to extract from the dump; the list of mods |
-| `tools/` | Shader translator, mods page, data extraction, progress meters |
+| `tools/` | Shader translator, mods page, data extraction, progress meters, the 1.0 arena porter (`port10/`) |
 | `docs/` | [Roadmap](docs/ROADMAP.md), [architecture](docs/ARCHITECTURE.md), [shaders](docs/SHADERS.md) |
 | `game/` | **Ignored by git.** Your game dump |
 | `save/`, `cache/` | **Ignored by git.** Save files; captured and translated shaders |
@@ -453,6 +453,65 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   Blizzard marked test-only or art-test (`ThorTest_Mojo`, `Sword_1H_PvP_70`,
   `Art_Test_Bow_1`, the 4v4 PvP amulets and about 400 more; choose "All items", as
   they have no rarity). Most have no in-game name.
+- `-DD3_MOD_LOOSE_FILES=1`: game data files are read from `loose/` in the save folder
+  (or the folder `D3_SNO_DIR` names) before the game's archives. A file there is found by
+  its group's folder and SNO number (`Worlds/102100.wrl`, `Scene/100826.scn`) and replaces
+  the game's copy; one with a new number is added to the game's file list when the
+  folder's `index.txt` names it (`<group> <SNO> <name>` per line). With the mod on,
+  `D3_LOAD_WORLD=<world name>` starts the game in a world, and `D3_DUMP_TYPES=<file>`
+  writes the game's type descriptors as JSON and quits (for `tools/port10`).
+  `src/mods/loose_files.cpp`; turn it off with `-DD3_MOD_LOOSE_FILES=`.
+
+### 1.0 arenas
+
+Diablo III's 1.0 PC release (2012) had PvP arenas the later game dropped. Their scenes,
+models, collision and marker sets are still on the 1.0 discs, and `tools/port10` converts
+them to 2.7.7's layouts so the Loose Files mod can load them. Nothing of either game is in
+this repository: the conversion reads your own copies, and its results stay in `build/`
+and your save folder. Never commit them.
+
+You need: the 1.0 discs' contents in `build/D3C1.0` (`Tome-1`, `Tome-2`, `Tome-3`, each
+with `Diablo III/Data_D3/PC/MPQs/<archive>.MPQ/<group>/<file>` extracted, and the Mac
+client `Diablo III.app` on the first), your 2.7.7 dump in `game/2.7.7`, a build with
+`-DD3_MOD_LOOSE_FILES=1`, and the Unicorn emulator for Python (`python3 -m pip install
+unicorn`). Then, or with the mods page's "1.0 arenas" tab:
+
+```bash
+python3 tools/port10/port10.py setup --d3 build/macos/d3
+```
+
+```bash
+python3 tools/port10/port10.py port PvP_Neph_Arena
+```
+
+```bash
+D3_LOAD_WORLD=PvP_Neph_Arena build/macos/d3
+```
+
+`setup` reads both versions' type tables (1.0's by running the 1.0 Mac client's start-up
+code under Unicorn; 2.7.7's from the build), 2.7.7's file list and a few 2.7.7 files used
+as templates into `build/port10/`. `port` converts an arena and every scene, model,
+collision mesh and marker set it uses that 2.7.7 lacks, field by field from the two type
+tables, and builds a world for it from 2.7.7's dueling arena. `list` shows the 16 arenas;
+`selftest` converts a marker set both versions ship and compares it with 2.7.7's copy.
+
+What carries over and what does not:
+
+- Models: 2.7.7 keeps vertices and indices outside the model's main block; 1.0's are
+  moved there, unpacked. Collision trees are rebuilt from 1.0's triangles. Navmeshes are
+  recompressed to 2.7.7's 16-bit form.
+- Tiled arenas are laid out from their tiles' names, as 2.7.7's own Azmodan arena is
+  (`E01_S02` style), or for PvP_Map2 by its grid (`x06_y04`, checked against where the
+  tiles' walkable edges meet).
+- Markers that name something 2.7.7 no longer has are dropped: the arenas' health-globe
+  spawners, a few lights, particles and props. `port` lists them.
+- Textures are not converted yet. Most arenas use textures 2.7.7 still has, but PvP_Map2
+  (a prototype map drawn with one texture atlas, which draws nothing) and
+  PvP_Octagon_Arena_01 lack their main texture, and several arenas lack their baked
+  lightmaps.
+- Seen in the game so far: PvP_Butcher_Arena_01 and PvP_Neph_Arena draw and play.
+  PvP_Keep_Arena and PvP_CraterST_Arena load but draw dark; the others load without
+  error but have not been looked at closely.
 
 ## Measuring progress
 
