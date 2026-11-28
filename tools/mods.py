@@ -509,7 +509,7 @@ PAGE = r"""<!doctype html>
   <p id="arenastate"></p>
   <div class="row" style="display:flex; gap:8px; margin-bottom:12px"><button id="arenasetup">Set up</button></div>
   <div class="tablewrap"><table id="arenalist"></table></div>
-  <p class="note">The PvP arenas of Diablo III's 1.0 PC release (2012), converted from your own 1.0 discs by tools/port10. Put the discs' contents in build/D3C1.0 (Tome-1, Tome-2, Tome-3), then Set up once: it reads the 1.0 and 2.7.7 file layouts and takes a minute. Port converts an arena into the loose folder in your save folder; Play starts the game in it with a throwaway developer hero. Nothing converted leaves your computer. Some arenas draw incompletely: textures 2.7.7 no longer has are not converted yet, and actors it dropped (the arenas' health globes) are left out. Progress shows in the build output.</p>
+  <p class="note">The PvP arenas of Diablo III's 1.0 PC release (2012), converted from your own 1.0 discs by tools/port10. Put the discs' contents in build/D3C1.0 (Tome-1, Tome-2, Tome-3), then Set up once: it reads the 1.0 and 2.7.7 file layouts and takes a few minutes. Its first step needs the Unicorn emulator in a private Python environment: run python3 -m venv build/port10/venv, then build/port10/venv/bin/python3 -m pip install unicorn. Port converts an arena into the loose folder in your save folder; Play starts the game in it with a throwaway developer hero, and in a normal game Nek the Brawler in New Tristram sends heroes to the ported arenas. Nothing converted leaves your computer. A few 1.0 actors are still left out (Keep's steam vents, the crypts' barricades). Progress shows in the build output.</p>
 </section>
 
 <section data-panel="controls" hidden>

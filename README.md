@@ -475,8 +475,19 @@ and your save folder. Never commit them.
 You need: the 1.0 discs' contents in `build/D3C1.0` (`Tome-1`, `Tome-2`, `Tome-3`, each
 with `Diablo III/Data_D3/PC/MPQs/<archive>.MPQ/<group>/<file>` extracted, and the Mac
 client `Diablo III.app` on the first), your 2.7.7 dump in `game/2.7.7`, a build with
-`-DD3_MOD_LOOSE_FILES=1`, and the Unicorn emulator for Python (`python3 -m pip install
-unicorn`). Then, or with the mods page's "1.0 arenas" tab:
+`-DD3_MOD_LOOSE_FILES=1`, and the Unicorn emulator for Python. Homebrew's Python refuses
+`pip install` outside a virtual environment, so put Unicorn in one where setup looks for
+it:
+
+```bash
+python3 -m venv build/port10/venv
+```
+
+```bash
+build/port10/venv/bin/python3 -m pip install unicorn
+```
+
+Then, or with the mods page's "1.0 arenas" tab:
 
 ```bash
 python3 tools/port10/port10.py setup --d3 build/macos/d3

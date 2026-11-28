@@ -18,7 +18,8 @@ stay on your computer.
 
 setup     reads what the conversion needs into build/port10/:
             the 1.0 type tables, from the 1.0 Mac client on the disc (its start-up code
-              is run under the Unicorn emulator: pip install unicorn);
+              is run under the Unicorn emulator, from this Python or from a private
+              environment in build/port10/venv: setup says how to make one);
             the 2.7.7 type tables, from a build with the Loose Files mod (it is started
               with D3_DUMP_TYPES and quits once it has written them);
             CoreTOC.dat (2.7.7's file list) and a few 2.7.7 files used as templates,
@@ -193,6 +194,24 @@ def need_setup():
 # ---------------------------------------------------------------------------------------
 # setup
 
+def unicorn_python():
+    """A Python that has the Unicorn emulator: this one, or the one in build/port10/venv.
+    Homebrew's and the system's Pythons refuse pip installs (PEP 668), so a private
+    environment is the usual place for it."""
+    try:
+        import unicorn  # noqa: F401
+        return sys.executable
+    except ImportError:
+        pass
+    venv = WORK / "venv" / "bin" / "python3"
+    if venv.exists() and subprocess.run([str(venv), "-c", "import unicorn"], capture_output=True).returncode == 0:
+        return str(venv)
+    sys.exit("This step needs the Unicorn emulator. Install it in a private environment, then "
+             "run setup again:\n"
+             f"    python3 -m venv {WORK / 'venv'}\n"
+             f"    {venv} -m pip install unicorn")
+
+
 def setup(args):
     WORK.mkdir(parents=True, exist_ok=True)
     disc = Disc(args.disc)
@@ -202,13 +221,10 @@ def setup(args):
         binary = disc.client_binary()
         if not binary:
             sys.exit("The 1.0 Mac client (Diablo III.app) is not on the disc folder.")
+        python = unicorn_python()
         say("1.0 type tables: running the 1.0 client's start-up code under Unicorn (a few minutes)")
-        try:
-            import unicorn  # noqa: F401
-        except ImportError:
-            sys.exit("This step needs the Unicorn emulator: python3 -m pip install unicorn")
-        subprocess.run([sys.executable, str(HERE / "emu.py"), binary, str(WORK / "mem.pkl")], check=True)
-        subprocess.run([sys.executable, str(HERE / "types10.py"), str(WORK / "mem.pkl"), binary], check=True)
+        subprocess.run([python, str(HERE / "emu.py"), binary, str(WORK / "mem.pkl")], check=True)
+        subprocess.run([python, str(HERE / "types10.py"), str(WORK / "mem.pkl"), binary], check=True)
         (WORK / "mem.pkl").unlink()
 
     if not (WORK / "types277.json").exists():
