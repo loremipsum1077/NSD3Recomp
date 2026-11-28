@@ -30,9 +30,12 @@ void * d3_window_metal_layer(void);
 // Returns nonzero once the user has asked to quit (closed the window).
 int d3_window_pump(void);
 
-// The current state of the one controller the port presents: a real game controller
-// if one is attached, combined with the keyboard.
+// The current state of player 1's controller: the first game controller, if one is
+// attached, combined with the keyboard.
 void d3_input_read(struct d3_pad_state * out);
+// Player <player>'s controller (0-3; 0 is d3_input_read's). Not connected when that player
+// has none.
+void d3_input_read_player(int player, struct d3_pad_state * out);
 
 // While captured, d3_input_read gives an idle controller (connected, nothing held), so the
 // game ignores the pad, and d3_input_read_raw still gives the real state. The developer

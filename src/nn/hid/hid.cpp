@@ -1,9 +1,10 @@
 #include <cstring>
 // nn::hid: controllers.
 //
-// The port presents one controller: a Pro Controller in the first player slot, fed
-// by the host's keyboard and first game controller (src/host/window.cpp). It is
-// connected whenever the window exists. Motion sensors and rumble are absent.
+// The port presents up to four controllers, as Pro Controllers in player slots 1-4
+// (src/host/window.cpp): the first is fed by the host's keyboard and first game
+// controller and is connected whenever the window exists; each further game controller
+// fills the next slot. Motion sensors and rumble are absent.
 #include "hid_host.h"
 
 #include "host/window.h"
@@ -15,7 +16,7 @@ void SignalEvent(EventType * event);
 }}
 
 namespace {
-const unsigned int kFirstPlayer = 0;        // NpadId::No1
+const unsigned int kPlayers = 4;            // NpadId::No1-No4 are 0-3
 const uint32_t kStyleFullKey = 1u << 0;     // Pro Controller
 const uint32_t kAttributeConnected = 1u << 0;
 
@@ -30,11 +31,16 @@ int64_t g_samplingNumber;
 // Called once per frame from the main thread, after input has been sampled.
 void d3_hid_poll(void)
 {
-    d3_pad_state pad;
-    d3_input_read(&pad);
-    if (pad.connected != g_wasConnected)
+    int connected = 0;
+    for (int p = 0; p < 4; p++)
     {
-        g_wasConnected = pad.connected;
+        d3_pad_state pad;
+        d3_input_read_player(p, &pad);
+        connected |= (pad.connected ? 1 : 0) << p;
+    }
+    if (connected != g_wasConnected)
+    {
+        g_wasConnected = connected;
         for (int i = 0; i < g_styleEventCount; i++)
         {
             nn::os::SignalEvent(&g_styleEvents[i]->event);
@@ -105,10 +111,13 @@ void BindNpadStyleSetUpdateEvent(const unsigned int &, nn::os::SystemEventType *
 // An empty style set means nothing is connected in that slot.
 NpadStyleSet GetNpadStyleSet(const unsigned int & id)
 {
-    d3_pad_state pad;
-    d3_input_read(&pad);
+    d3_pad_state pad{};
+    if (id < kPlayers)
+    {
+        d3_input_read_player(static_cast<int>(id), &pad);
+    }
     NpadStyleSet styles{};
-    if (id == kFirstPlayer && pad.connected)
+    if (pad.connected)
     {
         styles.storage[0] = kStyleFullKey;
     }
@@ -118,9 +127,12 @@ NpadStyleSet GetNpadStyleSet(const unsigned int & id)
 // Each returns how many states it wrote, newest first. Only the newest is offered.
 int GetNpadStates(NpadFullKeyState * out, int count, const unsigned int & id)
 {
-    d3_pad_state pad;
-    d3_input_read(&pad);
-    if (id != kFirstPlayer || !pad.connected || count < 1)
+    d3_pad_state pad{};
+    if (id < kPlayers)
+    {
+        d3_input_read_player(static_cast<int>(id), &pad);
+    }
+    if (!pad.connected || count < 1)
     {
         return 0;
     }

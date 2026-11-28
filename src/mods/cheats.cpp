@@ -538,6 +538,9 @@ unsigned long long D3ModRulesApply(unsigned long long uFlags)
     return (uFlags | gRulesOn.load(std::memory_order_relaxed)) & ~gRulesOff.load(std::memory_order_relaxed);
 }
 
+// The designer menu (designer_menu.inc) asks whether the cheats are built in.
+bool D3ModCheatsOn() { return true; }
+
 // Any thread: run a command line at the next server update.
 void D3ModCheatsQueue(const char * szLine)
 {

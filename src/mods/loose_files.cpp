@@ -38,7 +38,9 @@
 // SNOTOC.cpp to call D3ModLooseRegister once the game's file list is read, Prefetch.cpp
 // to load folder files through D3ModSnoLoadLoose instead of queueing an archive read (which
 // would find nothing), and to ask D3ModSnoIsLoose before it reports a file as not loaded,
-// and ScriptUtil.cpp's PlayerWarpToWorld to ask D3ModDuelWorld where a warp goes.
+// and ScriptUtil.cpp's PlayerWarpToWorld to ask D3ModDuelWorld where a warp goes. Sound
+// files, which the game opens by path (a bank's samples are files beside it,
+// SoundBank/<bank>/0000.ogg), are found through d3_loose_sound_path.
 #include "X/Common/Definitions/Definitions.h"
 #include "X/Common/Game.h"
 #include "X/Common/GlobalSNO.h"
@@ -62,6 +64,8 @@
 
 extern "C" const char * d3_save_dir(void);                             // src/nn/fs/fs.cpp
 extern "C" void d3_fs_mount(const char * name, const char * folder);  // src/nn/fs/fs.cpp
+extern "C" void d3_sound_set_loose_lookup(const char * (*lookup)(const char *));  // src/audio/fmod_host.cpp
+extern "C" const char * d3_loose_sound_path(const char * szPath);
 LPCSTR SNOGroupGetName(const SNOGroup snoGroup);                      // X/Common/SNO/SNOGroups.cpp
 LPCSTR SNOGetGroupExtension(SNOGroup snoGroup);                       // X/Common/SNO/SNOGroups.cpp
 void SNOFileAddEntry(SNOTOC::TOCType eType, const SNOGroup snoGroup, const uint32 uGuid, LPCSTR szFileNameNoExtension);  // X/Common/SNO/SNOFiles.cpp
@@ -82,6 +86,7 @@ static const std::string & sLooseFolder()
         else
         {
             d3_fs_mount("d3loose", spFolder->c_str());
+            d3_sound_set_loose_lookup(d3_loose_sound_path);
         }
     }
     return *spFolder;
@@ -125,6 +130,41 @@ BOOL D3ModSnoOverride(int32 snoGroup, uint32 uGuid, LPCSTR szName, FileReference
         return TRUE;
     }
     return FALSE;
+}
+
+// A sound file the game opens by path rather than by SNO (a bank's samples, such as
+// SoundBank\<bank>\0000.ogg): the full path of the folder's copy, or null when it has none.
+// The FMOD stand-in (src/audio/fmod_host.cpp) asks it once the folder is mounted and reads
+// the file itself, as the game's own FMOD file callback opens only files in the archives.
+extern "C" const char * d3_loose_sound_path(const char * szPath)
+{
+    const std::string & sFolder = sLooseFolder();
+    if (sFolder.empty() || !szPath || !*szPath)
+    {
+        return nullptr;
+    }
+    std::string sFile(szPath);
+    for (char & c : sFile)
+    {
+        if (c == '\\')
+        {
+            c = '/';
+        }
+    }
+    struct stat st;
+    std::string sFull = sFolder + "/" + sFile;
+    if (stat(sFull.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+    {
+        return nullptr;
+    }
+    static thread_local char szOut[1200];
+    snprintf(szOut, sizeof szOut, "%s", sFull.c_str());
+    static const char * szLog = getenv("D3_LOOSE_LOG");
+    if (szLog && *szLog)
+    {
+        fprintf(stderr, "loose: %s\n", sFile.c_str());
+    }
+    return szOut;
 }
 
 // What is known of each <Group>/<sno><ext>: whether it is in the folder, and whether the

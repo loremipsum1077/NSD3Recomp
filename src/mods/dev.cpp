@@ -10,6 +10,12 @@
 //     dueling world. D3_LOAD_WORLD, when starting the game, overrides it (empty for the menus).
 //     D3_SCENE_SWAP=<old>:<new> swaps a scene for another (see D3ModSceneSwap below).
 //     D3_SUBSCENE=<n> picks sub-scene <n> in every generated cluster (D3ModSubSceneOverride).
+//     D3_PLAYERS=<1-4> starts that many local heroes (the -players option of Blizzard's PC
+//     builds), one per controller. D3_GAME_TYPE=<type> starts the game as one of the game
+//     types the release still has (D3ModDevGameType): tdm, the PvP team deathmatch.
+//     D3_CLASS=<class> makes every developer hero that class (-class): dh, barb, wiz, wd,
+//     monk, crusader or necro. They start with nothing equipped, so a Monk, whose attacks
+//     need no weapon, can fight at once.
 // D3_MOD_BLIZZCON=1  the BlizzCon show-floor demo, as the -blizzcon argument starts it: an
 //     offline party of level-70 demo heroes, the title screen goes straight to the main menu,
 //     and the game starts in a Greater Rift. The demo's title screen loaded fewer UI files
@@ -69,11 +75,69 @@ void D3ModDevStartup(CmdLineParams & tParams)
         snprintf(tParams.sLoadWorld, sizeof(tParams.sLoadWorld), "%s", szWorld);
         fprintf(stderr, "dev: starting in world %s\n", szWorld);
     }
+    const char * szPlayers = getenv("D3_PLAYERS");
+    if (szPlayers && *szPlayers)
+    {
+        int nPlayers = atoi(szPlayers);
+        tParams.nTestPlayerNum = nPlayers < 1 ? 1 : nPlayers > 4 ? 4 : nPlayers;
+        fprintf(stderr, "dev: %d local player%s\n", tParams.nTestPlayerNum, tParams.nTestPlayerNum == 1 ? "" : "s");
+    }
+    const char * szClass = getenv("D3_CLASS");
+    if (szClass && *szClass)
+    {
+        static const char * const kClasses[] = {"dh", "barb", "wiz", "wd", "monk", "crusader", "necro"};
+        for (int i = 0; i < 7; i++)
+        {
+            if (strcmp(szClass, kClasses[i]) == 0)
+            {
+                tParams.eTestClassOverride = (PlayerClass)i;
+                fprintf(stderr, "dev: every hero a %s\n", kClasses[i]);
+            }
+        }
+    }
     if (D3_MOD_BLIZZCON)
     {
         tParams.tBitArray.Set(CMDLINE_BLIZZCON_BIT, TRUE);
         fprintf(stderr, "dev: BlizzCon demo\n");
     }
+}
+
+// D3_GAME_TYPE=<type>: the game type a D3_LOAD_WORLD start is made with, instead of the
+// release's -1 (none). The game templates (GameTemplate.cpp)
+// still hold the PvP types 1.0 shipped and 2.7.7 never offers: tdm (4) is the team
+// deathmatch, two teams with a pregame countdown, a timed round and a score to 300, run by
+// PVPUpdate (X/Server/PVP.cpp). The other PvP numbers (2 dota, 3 arena, 5 ffa) may be given,
+// untested. Game.cpp's GamePlayWorld, which starts a D3_LOAD_WORLD game, is patched to ask
+// this.
+int D3ModDevGameType()
+{
+    const char * szType = getenv("D3_GAME_TYPE");
+    if (!szType || !*szType)
+    {
+        return -1;
+    }
+    static const struct { const char * szName; int nType; } kTypes[] = {
+        {"dota", 2}, {"arena", 3}, {"tdm", 4}, {"ffa", 5},
+    };
+    int nType = -1;
+    for (const auto & t : kTypes)
+    {
+        if (strcmp(szType, t.szName) == 0)
+        {
+            nType = t.nType;
+        }
+    }
+    if (nType < 0 && szType[0] >= '0' && szType[0] <= '9')
+    {
+        nType = atoi(szType);
+    }
+    if (nType < 2 || nType > 5)
+    {
+        fprintf(stderr, "dev: game type %s is not one of dota, arena, tdm, ffa (2-5); ignored\n", szType);
+        return -1;
+    }
+    fprintf(stderr, "dev: game type %d\n", nType);
+    return nType;
 }
 
 #include "X/Common/Definitions/SceneDefinition.h"

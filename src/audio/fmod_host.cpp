@@ -39,6 +39,18 @@ extern "C" const unsigned d3_vorbis_setup_count;
 extern "C" int d3_audio_start(int rate, void (*mix)(float * interleavedStereo, int frames));
 
 namespace {
+// The Loose Files mod's lookup of a sound file the game names as "<n>:SoundBank\\...": the
+// full path of the folder's copy, or null (src/mods/loose_files.cpp sets it when it mounts its
+// folder). The game's own file callback opens only files in its archives.
+const char * (*g_loosePath)(const char *);
+}  // namespace
+
+extern "C" __attribute__((visibility("default"))) void d3_sound_set_loose_lookup(const char * (*lookup)(const char *))
+{
+    g_loosePath = lookup;
+}
+
+namespace {
 
 // In this program malloc is the game's, and it draws on heaps of a fixed size that
 // were never meant to hold decoded sound. Everything here comes from the host.
@@ -142,8 +154,43 @@ Channel * Find(FMOD_CHANNEL * handle)
 
 // ---- reading files through the game's own file callbacks ----
 
+bool ReadLoose(const char * path, const FMOD_CREATESOUNDEXINFO * info, uint8_t ** data, unsigned * size)
+{
+    FILE * f = fopen(path, "rb");
+    if (!f)
+    {
+        return false;
+    }
+    fseek(f, 0, SEEK_END);
+    long fileSize = ftell(f);
+    unsigned offset = info ? info->fileoffset : 0;
+    unsigned want = fileSize > static_cast<long>(offset) ? static_cast<unsigned>(fileSize - offset) : 0;
+    if (info && info->length && info->length < want)
+    {
+        want = info->length;
+    }
+    uint8_t * buffer = static_cast<uint8_t *>(HostAlloc(want ? want : 1));
+    bool ok = buffer && want && fseek(f, offset, SEEK_SET) == 0 && fread(buffer, 1, want, f) == want;
+    fclose(f);
+    if (!ok)
+    {
+        HostFree(buffer);
+        return false;
+    }
+    *data = buffer;
+    *size = want;
+    return true;
+}
+
 bool ReadAll(const char * name, const FMOD_CREATESOUNDEXINFO * info, uint8_t ** data, unsigned * size)
 {
+    if (g_loosePath && name[0] && name[1] == ':')
+    {
+        if (const char * path = g_loosePath ? g_loosePath(name + 2) : nullptr)
+        {
+            return ReadLoose(path, info, data, size);
+        }
+    }
     FMOD_FILE_OPEN_CALLBACK open = info && info->fileuseropen ? info->fileuseropen : g_files.open;
     FMOD_FILE_CLOSE_CALLBACK close = info && info->fileuserclose ? info->fileuserclose : g_files.close;
     FMOD_FILE_READ_CALLBACK read = info && info->fileuserread ? info->fileuserread : g_files.read;
@@ -791,6 +838,16 @@ void * Load(void * p)
     if (!ok && !(job->mode & FMOD_OPENUSER))
     {
         g_statFailed += s->subSoundCount ? 0 : 1;
+        if (!s->subSoundCount && getenv("D3_SOUND_STATS"))
+        {
+            fprintf(stderr, "sound: could not decode %s\n", job->name ? job->name : "a sound in memory");
+        }
+    }
+    else if (ok && job->name && s->rate > 0 && s->frames / s->rate >= 30 && getenv("D3_SOUND_STATS"))
+    {
+        // Music is the only long sound; naming it shows a track decoded.
+        fprintf(stderr, "sound: decoded %s, %u s, %d channel%s\n", job->name, s->frames / s->rate, s->channels,
+                s->channels == 1 ? "" : "s");
     }
     s->defaultFrequency = static_cast<float>(s->rate);
     s->state = FMOD_OPENSTATE_READY;

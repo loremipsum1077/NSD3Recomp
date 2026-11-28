@@ -170,6 +170,8 @@ and run it again. Repeat when a new area shows missing objects.
 ## Controls
 
 A game controller maps by position: the right-hand face button is the Switch's A.
+Up to four players: the keyboard and the first controller are player 1, and each further
+controller is the next player, for local co-op (the game's own drop-in) and local PvP.
 
 | Keyboard | Switch |
 |---|---|
@@ -412,8 +414,21 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   the `-subscenes` option of Blizzard's PC builds, which the release still honours but
   never sets: each scene cluster of a random dungeon takes its sub-scene variant `<n>`
   (the rooms and set pieces placed in it) instead of a random one. Clusters with fewer
-  variants pick at random as usual; the release would leave them empty. `src/mods/dev.cpp`;
-  turn it off with `-DD3_MOD_LOAD_WORLD=`.
+  variants pick at random as usual; the release would leave them empty.
+  Local PvP: `D3_GAME_TYPE=tdm` starts the world as 1.0's team deathmatch, a game type
+  2.7.7 still has but never offers: heroes are split into two teams, a pregame countdown
+  leads to a ten-minute round, each kill scores for the killer's team, and the first to
+  300 or the higher score at time wins. `D3_PLAYERS=<2-4>` starts that many local heroes,
+  one per controller, and `D3_CLASS=monk` (or `dh`, `barb`, `wiz`, `wd`, `crusader`,
+  `necro`) makes them all that class; they start with nothing equipped, so a Monk, who
+  needs no weapon, can fight at once. For example
+  `D3_LOAD_WORLD=PvP_Duel_Small D3_GAME_TYPE=tdm D3_PLAYERS=2 D3_CLASS=monk` with two
+  controllers. `D3_EXTRA_PADS=1` shows a second controller that presses nothing, to try it
+  with one, and `D3_PVP_LOG=1` prints the match's state every five seconds. 2.7.7 lacks
+  some of 1.0's PvP data, so the mod builds health bars from the normal template, and the
+  countdown's freeze and the round end's buffs are skipped (their powers are gone). The
+  players share one screen and camera. `src/mods/dev.cpp`; turn it off with
+  `-DD3_MOD_LOAD_WORLD=`.
 - `-DD3_MOD_BLIZZCON=1`: the BlizzCon show-floor demo, as `-blizzcon` starts it: an
   offline party of level-70 demo heroes, and Continue goes straight into a Greater Rift.
   Your own heroes are not changed (the game's settings file may be). The demo's title
@@ -489,9 +504,11 @@ Four other 1.0 worlds that 2.7.7 lacks are ported the same way:
   in the Spire with Bile Crawler spawners and a Mallet Lord. 1.0 times it to a step of
   the Heaven_CorruptedArch quest, but nothing in its data sends heroes there.
 - `Tod_LoadScreen`: the ruined cathedral room 1.0's title screen showed
-  (`trDun_StartScreen`), as a walkable world. 2.7.7 has neither the scene nor its model
-  and collision. The 1.0 world of that name is the load screen's and does not place this
-  scene; pairing the two is the porter's.
+  (`trDun_StartScreen`): a sarcophagus on a dais, stairs and a columned hall, lit and
+  textured. 2.7.7 has neither the scene nor its model and collision. The 1.0 world of that
+  name is the load screen's and does not place this scene; pairing the two is the porter's.
+  It was only ever a backdrop: its navmesh is one flat floor, so the walls do not stop a
+  hero, and there is nothing to do in it but look.
 
 The training rooms keep the dueling world's rules and are left out of Nek's rotation (start
 them with `D3_LOAD_WORLD` or the arenas tab's Play). The Taunt Realm and the title-screen
@@ -559,7 +576,12 @@ What carries over and what does not:
   tiles' walkable edges meet).
 - The world keeps the 1.0 arena's environment: sky colour, post-processing, weather (its
   fog, colour correction and the lights that follow the player), ambient sound and
-  reverb. Music 2.7.7 no longer has is left as the template's. An arena whose weather is
+  reverb. Music 2.7.7 no longer has is converted with its sound bank, whose Ogg Vorbis
+  samples are copied beside it (`SoundBank/<bank>/0000.ogg`), as 2.7.7 keeps its own:
+  PvP_Neph_Arena plays 1.0's BlizzCon PvP track (`Music_A0_Blizzcon_PVP`). Only Ogg banks
+  convert; 2.7.7 reads its other kinds from FMOD sample banks. The game opens sound files
+  by path, through a callback that reads only its archives, so the mod's FMOD stand-in
+  reads the folder's copies itself. An arena whose weather is
   1.0's `NoWeather` placeholder (PvP_Crypt_Arena_02, PvP_Garden_Arena) keeps the
   template's instead: NoWeather has no sun, and 2.7.7 lights a scene from its weather's
   sun, using the baked lightmap only as its shadow.
@@ -569,6 +591,9 @@ What carries over and what does not:
   are dropped, and `port` lists them: the health-globe spawner (2.7.7 has no PvP one; its
   `PVP_HealingWell` is a placeholder with a Demon Hunter sentry's model), Keep's steam vents (they need animation sets), a
   barricade in each crypt and PVP_Pillar_01's test pressure plates (gizmos).
+- Every ported world's start markers are given start-location numbers 2.7.7 names, as the
+  game records only those as entrances and otherwise starts a hero at an arbitrary spot
+  (the title-screen cathedral's start was numbered 170, which put heroes outside the room).
 - Start markers become entrances 2.7.7's brawling can use: each gets a start-location
   number 2.7.7 knows, once per arena. Several 1.0 arenas number theirs 0 (the town's),
   repeat one or leave it out; those get free `PVP_Neutral_SpawnLocation` numbers. The mod

@@ -7,6 +7,11 @@
 // Mouse: queued for the Mouse mod (d3_mouse_take), which hands it to the game.
 // Game controllers map by position: the right-hand face button is always the
 // Switch's A, whatever letter is printed on it.
+// Up to four players: the keyboard and the first game controller are player 1, and each
+// further controller is the next player, for local co-op and local PvP. A controller keeps
+// its player until it is unplugged; a new one takes the first free player.
+// D3_EXTRA_PADS=<n> also shows players 2 to n+1 as connected controllers that press nothing,
+// so a game with more local heroes (D3_PLAYERS) can be tried with one controller.
 #include "window.h"
 
 #include <SDL.h>
@@ -23,12 +28,15 @@ namespace {
 
 SDL_Window * g_window;
 SDL_MetalView g_metalView;
-SDL_GameController * g_controller;
+const int kPlayers = 4;
+SDL_GameController * g_controllers[kPlayers];  // by player
+SDL_GameController *& g_controller = g_controllers[0];
 bool g_started;
 bool g_quit;
 
 pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 d3_pad_state g_state;
+d3_pad_state g_others[kPlayers];  // players 2-4 (index 1-3), under g_lock
 int g_hotkeys;  // under g_lock
 
 const int kMouseQueue = 256;
@@ -228,15 +236,55 @@ uint64_t ScriptedButtons()
     return buttons;
 }
 
-void OpenFirstController()
+// Gives each free player a controller that is attached and not yet anyone's.
+void OpenControllers()
 {
-    for (int i = 0; !g_controller && i < SDL_NumJoysticks(); i++)
+    for (int i = 0; i < SDL_NumJoysticks(); i++)
     {
-        if (SDL_IsGameController(i))
+        if (!SDL_IsGameController(i))
         {
-            g_controller = SDL_GameControllerOpen(i);
+            continue;
+        }
+        SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(i);
+        bool taken = false;
+        for (SDL_GameController * c : g_controllers)
+        {
+            taken = taken || (c && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c)) == id);
+        }
+        for (int p = 0; !taken && p < kPlayers; p++)
+        {
+            if (!g_controllers[p])
+            {
+                g_controllers[p] = SDL_GameControllerOpen(i);
+                taken = true;
+            }
         }
     }
+}
+
+// A controller's buttons and sticks, added to what s already holds.
+void AddController(SDL_GameController * c, d3_pad_state & s)
+{
+    for (const PadButton & b : kPad)
+    {
+        if (SDL_GameControllerGetButton(c, b.from))
+        {
+            s.buttons |= 1ull << b.button;
+        }
+    }
+    if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000)
+    {
+        s.buttons |= 1ull << D3_PAD_ZL;
+    }
+    if (SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000)
+    {
+        s.buttons |= 1ull << D3_PAD_ZR;
+    }
+    // SDL's Y axes point down; the Switch's point up.
+    s.leftX = Clamp(s.leftX + SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX));
+    s.leftY = Clamp(s.leftY - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY));
+    s.rightX = Clamp(s.rightX + SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTX));
+    s.rightY = Clamp(s.rightY - SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_RIGHTY));
 }
 
 void Sample()
@@ -260,26 +308,24 @@ void Sample()
 
     if (g_controller)
     {
-        for (const PadButton & b : kPad)
+        AddController(g_controller, s);
+    }
+
+    static int extra = -1;
+    if (extra < 0)
+    {
+        const char * e = getenv("D3_EXTRA_PADS");
+        extra = e ? std::min(std::max(atoi(e), 0), kPlayers - 1) : 0;
+    }
+    d3_pad_state others[kPlayers];
+    memset(others, 0, sizeof others);
+    for (int p = 1; p < kPlayers; p++)
+    {
+        others[p].connected = g_controllers[p] != nullptr || p <= extra;
+        if (g_controllers[p])
         {
-            if (SDL_GameControllerGetButton(g_controller, b.from))
-            {
-                s.buttons |= 1ull << b.button;
-            }
+            AddController(g_controllers[p], others[p]);
         }
-        if (SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000)
-        {
-            s.buttons |= 1ull << D3_PAD_ZL;
-        }
-        if (SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000)
-        {
-            s.buttons |= 1ull << D3_PAD_ZR;
-        }
-        // SDL's Y axes point down; the Switch's point up.
-        s.leftX = Clamp(s.leftX + SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_LEFTX));
-        s.leftY = Clamp(s.leftY - SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_LEFTY));
-        s.rightX = Clamp(s.rightX + SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_RIGHTX));
-        s.rightY = Clamp(s.rightY - SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_RIGHTY));
     }
 
     s.buttons |= ScriptedButtons();
@@ -303,6 +349,7 @@ void Sample()
     pthread_mutex_lock(&g_lock);
     bool changed = s.buttons != g_state.buttons;
     g_state = s;
+    memcpy(g_others, others, sizeof g_others);
     pthread_mutex_unlock(&g_lock);
 
     // D3_INPUT_TRACE prints the buttons whenever they change, to check a mapping.
@@ -342,7 +389,7 @@ void d3_window_create(void)
     {
         g_metalView = SDL_Metal_CreateView(g_window);
     }
-    OpenFirstController();
+    OpenControllers();
     if (getenv("D3_INPUT_TRACE"))
     {
         fprintf(stderr, "input: window %s, controller %s\n", g_window ? "open" : "not open",
@@ -409,15 +456,18 @@ int d3_window_pump(void)
             }
             break;
         case SDL_CONTROLLERDEVICEADDED:
-            OpenFirstController();
+            OpenControllers();
             break;
         case SDL_CONTROLLERDEVICEREMOVED:
-            if (g_controller && e.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(g_controller)))
+            for (SDL_GameController *& c : g_controllers)
             {
-                SDL_GameControllerClose(g_controller);
-                g_controller = nullptr;
-                OpenFirstController();
+                if (c && e.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(c)))
+                {
+                    SDL_GameControllerClose(c);
+                    c = nullptr;
+                }
             }
+            OpenControllers();
             break;
         }
     }
@@ -483,6 +533,30 @@ void d3_input_read_raw(struct d3_pad_state * out)
     pthread_mutex_lock(&g_lock);
     *out = g_state;
     pthread_mutex_unlock(&g_lock);
+}
+
+void d3_input_read_player(int player, struct d3_pad_state * out)
+{
+    if (player != 0)
+    {
+        pthread_mutex_lock(&g_lock);
+        if (player > 0 && player < kPlayers)
+        {
+            *out = g_others[player];
+        }
+        else
+        {
+            memset(out, 0, sizeof *out);
+        }
+        if (g_captured)
+        {
+            out->buttons = 0;
+            out->leftX = out->leftY = out->rightX = out->rightY = 0;
+        }
+        pthread_mutex_unlock(&g_lock);
+        return;
+    }
+    d3_input_read(out);
 }
 
 void d3_input_read(struct d3_pad_state * out)

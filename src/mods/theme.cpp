@@ -378,6 +378,9 @@ void sSwitch(const std::string & sRequest, bool bKeep)
 
 }  // namespace
 
+// The designer menu (designer_menu.inc) asks whether the theme mod is built in.
+bool D3ModThemeOn() { return true; }
+
 // The designer menu's requests (any thread); the next server update applies them.
 void D3ModThemeRequest(const char * szRequest)
 {

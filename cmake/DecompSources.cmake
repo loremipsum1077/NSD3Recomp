@@ -290,6 +290,43 @@ if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS OR D3_MOD_LOOSE_FILE
                   "SSceneID SSceneAdd(SNO snoScene,"
         --replace "    SSceneID idSScene = tSGame.ptSScenes->ElementNew()$<SEMICOLON>"
                   "    { unsigned int D3ModSceneSwap(unsigned int)$<SEMICOLON> snoScene = D3ModSceneSwap(snoScene)$<SEMICOLON> } SSceneID idSScene = tSGame.ptSScenes->ElementNew()$<SEMICOLON>")
+    # D3_GAME_TYPE (dev.cpp): the game type of the game a D3_LOAD_WORLD start makes. The
+    # console client starts such a game as type "none", through GamePlayWorld, and would not
+    # start a PvP type at all, so the type is set only on the game GamePlayWorld creates.
+    d3_patch_source("X/Common/Game.cpp"
+        --replace "    strcpy(tParams.szGameName, \"GamePlayWorld\")$<SEMICOLON>"
+                  "    strcpy(tParams.szGameName, \"GamePlayWorld\")$<SEMICOLON> { int D3ModDevGameType()$<SEMICOLON> int n = D3ModDevGameType()$<SEMICOLON> if (n >= 0) tParams.eGameType = (GameType)n$<SEMICOLON> }")
+    # 2.7.7's UI has no PvP health bar (game_dialog_main.HPBar_PVP), which a PvP game type
+    # builds its bars from; the usual bar is used instead.
+    d3_patch_source("X/Client/UserInterface/Interface/UIGame.cpp"
+        --replace "GameTypeIsPvP() ? \"Game:game_dialog_main.HPBar_PVP\" : \"Game:game_dialog_main.HPBar\""
+                  "\"Game:game_dialog_main.HPBar\"")
+    # A PvP game type's pregame and round-end buffs use powers 2.7.7's global list no longer
+    # names (GLOBALSNO_POWERS_PVP_SKIRMISH_BUFF, _ROUNDEND_BUFF), and a buff with no power
+    # crashes the passive checks when a duel starts; they are skipped. The pregame countdown
+    # then leaves heroes able to fight, and the round's end does not freeze them.
+    # A new hero joins the team the server was told to put it in (team 0 for a local hero),
+    # or the team with fewest players when the game's PvP flag is set, which nothing in 2.7.7
+    # sets any more; a PvP game type's heroes all joined team 0, leaving the other empty, and
+    # the match ended as soon as its round started. In a PvP game type they are balanced.
+    d3_patch_source("X/Common/TeamCommon.cpp"
+        --replace "    if (tPlayer.eJoinTeam != TEAM_INVALID)"
+                  "    if (tPlayer.eJoinTeam != TEAM_INVALID && !GameTypeIsPvP())"
+        --replace "    if (SGameIsPvPFlagSet())"
+                  "    if (SGameIsPvPFlagSet() || GameTypeIsPvP())")
+    # D3_PVP_LOG (src/mods/pvp_trace.inc): the match's state while a PvP game type runs.
+    d3_patch_source("X/Server/PVP.cpp"
+        --replace "    PVPGameState eGameState = GameGetPVPGameState()$<SEMICOLON>"
+                  "    { void D3ModPvpTrace()$<SEMICOLON> D3ModPvpTrace()$<SEMICOLON> } PVPGameState eGameState = GameGetPVPGameState()$<SEMICOLON>"
+        --append "#include \"${PROJECT_SOURCE_DIR}/src/mods/pvp_trace.inc\""
+        --replace "    SNO snoBuff = GlobalSNOGet(GLOBALSNO_POWERS_PVP_SKIRMISH_BUFF)$<SEMICOLON>"
+                  "    SNO snoBuff = GlobalSNOGet(GLOBALSNO_POWERS_PVP_SKIRMISH_BUFF)$<SEMICOLON> if (snoBuff == SNO_NONE) return$<SEMICOLON>"
+        --replace "    tBuffStartData.pExpirationEffect = sEnrageBuffApply$<SEMICOLON>"
+                  "    tBuffStartData.pExpirationEffect = sEnrageBuffApply$<SEMICOLON> if (snoBuff == SNO_NONE) return$<SEMICOLON>"
+        --replace "    tBuffStartData.bFailsIfImmobilizeImmune = FALSE$<SEMICOLON>"
+                  "    tBuffStartData.bFailsIfImmobilizeImmune = FALSE$<SEMICOLON> if (snoBuff == SNO_NONE) return$<SEMICOLON>"
+        --replace "    tBuffStartData.pOnGetHitEffect = sEnrageBuffUpdateDOT$<SEMICOLON>"
+                  "    tBuffStartData.pOnGetHitEffect = sEnrageBuffUpdateDOT$<SEMICOLON> if (snoBuff == SNO_NONE) return$<SEMICOLON>")
     d3_patch_source("X/Common/Shell/MainNX64.cpp"
         --replace "    if (gtCmdLineParams.eTestType != TESTTYPE_NONE)"
                   "    { void D3ModDevStartup(CmdLineParams &)$<SEMICOLON> D3ModDevStartup(gtCmdLineParams)$<SEMICOLON> } if (gtCmdLineParams.eTestType != TESTTYPE_NONE)")

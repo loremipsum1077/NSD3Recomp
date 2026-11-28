@@ -17,8 +17,13 @@
 #include "X/Common/ActorCommonData.h"
 #include <stdio.h>
 #include <stdlib.h>
-void D3ModCheatsQueue(const char * szLine) __attribute__((weak));  // src/mods/cheats.cpp
-void D3ModThemeRequest(const char * szRequest) __attribute__((weak));  // src/mods/theme.cpp
+// The cheats and theme mods' entry points (src/mods/cheats.cpp, theme.cpp). The Mac linker
+// will not leave a weak reference undefined, so these weak definitions stand in when a mod
+// is off, and D3ModCheatsOn/D3ModThemeOn say whether it is on.
+__attribute__((weak)) bool D3ModCheatsOn() { return false; }
+__attribute__((weak)) bool D3ModThemeOn() { return false; }
+__attribute__((weak)) void D3ModCheatsQueue(const char *) {}
+__attribute__((weak)) void D3ModThemeRequest(const char *) {}
 extern UIID UIDLG_CONSOLEDESIGNERMENU_CHARACTER;  // X/Client/UserInterface/UIGlobals.cpp
 extern UIID UIDLG_CONSOLEDESIGNERMENU_GAME;
 extern UIID UIDLG_CONSOLEDESIGNERMENU_CONSOLE;
@@ -44,7 +49,7 @@ static void D3ModDesignerCommand(LPCSTR szCommand)
     }
     if (strncmp(szCommand, "cheat ", 6) == 0)
     {
-        if (D3ModCheatsQueue)
+        if (D3ModCheatsOn())
         {
             D3ModCheatsQueue(szCommand + 6);
             fprintf(stderr, "designer: %s\n", szCommand + 6);
@@ -57,7 +62,7 @@ static void D3ModDesignerCommand(LPCSTR szCommand)
     }
     if (strncmp(szCommand, "theme ", 6) == 0)
     {
-        if (D3ModThemeRequest)
+        if (D3ModThemeOn())
         {
             D3ModThemeRequest(szCommand + 6);
             fprintf(stderr, "designer: %s\n", szCommand);
@@ -240,7 +245,7 @@ void GameListDataSource::Initialize()
     sAdd(m_consoleCommandOptionItems, "Spawn a champion pack", "cheat spawn X1_LR_Boss_MorluSpellcaster_Ice champion");
     sAdd(m_consoleCommandOptionItems, "Spawn a rare", "cheat spawn X1_LR_Boss_MorluSpellcaster_Ice rare");
     // Season themes (src/mods/theme.cpp): the first season of each, and off.
-    if (D3ModThemeRequest)
+    if (D3ModThemeOn())
     {
         static LPCSTR const arThemes[][2] = {
             {"Theme: off", "theme off"},

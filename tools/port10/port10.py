@@ -47,6 +47,7 @@ sys.path.insert(0, str(HERE))
 import check  # noqa: E402
 import convert  # noqa: E402
 import cpk  # noqa: E402
+import sound  # noqa: E402
 import texture  # noqa: E402
 import world  # noqa: E402
 
@@ -67,6 +68,8 @@ GROUPS = {
     "Particle": (27, "Particle", ".prt", "Particle"),
     "Weather": (47, "Weather", ".wth", "Weather"),
     "Actor": (1, "Actor", ".acr", "Actor"),  # only those in ACTORS
+    "Music": (62, "Music", ".mus", "Music"),            # sound.py, not convert.py
+    "SoundBank": (41, "SoundBank", ".sbk", "SoundBank"),  # sound.py; Ogg Vorbis banks only
 }
 # 2.7.7 files whose headers (version, asset version, layout hash) the converted files get,
 # and the world every ported world is built from (the PvP dueling arena's).
@@ -82,6 +85,8 @@ SAMPLES = {
     "Particle": "Particle\\a2dun_aqd_TorchFire.prt",
     "Weather": "Weather\\a2dun_Zolt_Weather1.wth",
     "Actor": "Actor\\PVP_HealingWell.acr",
+    "Music": "Music\\Music_A1_Atmos_int.mus",
+    "SoundBank": "SoundBank\\Music_Act1_Maghda.sbk",
 }
 # The 1.0 arena worlds and the scenes each is made of: a name, or a prefix ending in _ for
 # tiled arenas (their tiles' names give the layout, world.tile_position).
@@ -415,6 +420,15 @@ class Port:
             src = open(path, "rb").read()
             if group == "Textures":
                 data, log = texture.convert_texture(src, self.game.sample(group), new)
+            elif group == "Music":
+                data, log = sound.convert_music(src, self.game.sample(group), new, self.on_sno)
+            elif group == "SoundBank":
+                data, files, log = sound.convert_bank(src, self.game.sample(group), new)
+                # Its samples are files beside it, found by the bank's name (both versions).
+                folder = self.out / "SoundBank" / name
+                for f in files or []:
+                    folder.mkdir(parents=True, exist_ok=True)
+                    (folder / f).write_bytes(open(os.path.join(path[:-len(".sbk")], f), "rb").read())
             else:
                 data, log = convert.convert_file(GROUPS[group][3], src, self.game.sample(group),
                                                  self.on_sno, self.has, sno=new)
@@ -467,10 +481,12 @@ class Port:
         for line in log:
             say("    " + line)
         self.drain()
+        # Every world's starts need a number 2.7.7 knows, or the game records no entrance and
+        # puts a hero who arrives anywhere it can (outside the title-screen room, whose
+        # start is 1.0's number 170).
+        self.entrances()
         area = NOT_DUELING.get(world_name)
-        if area is None:
-            self.entrances()
-        else:
+        if area is not None:
             area = self.game.names[(22, area.lower())]  # LevelArea
         data = world.build(self.game.sample("Worlds"), sno_world, [(s, x + dx, y + dy) for s, (x, y) in placed],
                            level_area=area, env=env, dueling=area is None)
@@ -479,7 +495,8 @@ class Port:
         return w[2]
 
     def entrances(self):
-        """Makes the arena's starts entrances 2.7.7's brawling can use (world.number_starts).
+        """Makes the world's starts entrances 2.7.7 records, which brawling picks from
+        (world.number_starts).
         Heroes leave as they leave PVP_Duel_Small, by teleporting to town: its town portals
         are only for the campaign's quests."""
         start = self.game.names[(1, "start_location_0")]
