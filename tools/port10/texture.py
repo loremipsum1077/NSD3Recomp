@@ -141,8 +141,11 @@ def convert_texture(src, header, sno):
     is_lut = fmt == 0 and (width, height, faces) == (512, 512, 1) and mip_min == 0 and mip_max == 0
     if fmt not in NVN_FORMAT and not is_lut:
         return None, ['format %d is not converted yet' % fmt]
-    if faces != 1 or mip_min != 0:
-        return None, ['%d faces, first level %d: not converted yet' % (faces, mip_min)]
+    if faces != 1:
+        return None, ['%d faces: not converted yet' % faces]
+    # A first level above 0 (FloorDirtCovered_512_spec_trDun's is 1) still stores every
+    # level from the full size; the levels below it are converted as usual, and the level
+    # check below refuses a file that leaves one out.
     levels = []
     for i in range(0 if is_lut else mip_max + 1):
         w, h = max(width >> i, 1), max(height >> i, 1)

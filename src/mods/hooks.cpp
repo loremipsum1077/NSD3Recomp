@@ -20,6 +20,9 @@ void D3ModThemeUpdate();  // src/mods/theme.cpp
 #if D3_HOOK_EVENTS
 void D3ModEventsUpdate();  // src/mods/events.cpp
 #endif
+#if D3_HOOK_LOOSE
+const char * D3ModLooseString(SNO snoStringList, const char * szLabel);  // src/mods/loose_files.cpp
+#endif
 #if D3_HOOK_WORLDBOSS
 const char * D3ModWorldBossString(SNO snoStringList, const char * szLabel);  // src/mods/worldboss.cpp
 void D3ModWorldBossUpdate();
@@ -56,6 +59,12 @@ const char * D3ModString(SNO snoStringList, const char * szLabel)
     if (!szText)
     {
         szText = D3ModWorldBossString(snoStringList, szLabel);
+    }
+#endif
+#if D3_HOOK_LOOSE
+    if (!szText)
+    {
+        szText = D3ModLooseString(snoStringList, szLabel);
     }
 #endif
     return szText;

@@ -507,9 +507,9 @@ PAGE = r"""<!doctype html>
 
 <section data-panel="arenas" id="arenas" hidden>
   <p id="arenastate"></p>
-  <div class="row" style="display:flex; gap:8px; margin-bottom:12px"><button id="arenasetup">Set up</button></div>
+  <div class="row" style="display:flex; gap:8px; margin-bottom:12px"><button id="arenasetup">Set up</button><button id="arenaall">Port all</button></div>
   <div class="tablewrap"><table id="arenalist"></table></div>
-  <p class="note">The PvP arenas of Diablo III's 1.0 PC release (2012), converted from your own 1.0 discs by tools/port10. Put the discs' contents in build/D3C1.0 (Tome-1, Tome-2, Tome-3), then Set up once: it reads the 1.0 and 2.7.7 file layouts and takes a few minutes. Its first step needs the Unicorn emulator in a private Python environment: run python3 -m venv build/port10/venv, then build/port10/venv/bin/python3 -m pip install unicorn. Port converts an arena into the loose folder in your save folder; Play starts the game in it with a throwaway developer hero, and in a normal game Nek the Brawler in New Tristram sends heroes to the ported arenas. Nothing converted leaves your computer. A few 1.0 actors are still left out (Keep's steam vents, the crypts' barricades). Progress shows in the build output.</p>
+  <p class="note">The PvP arenas of Diablo III's 1.0 PC release (2012), converted from your own 1.0 discs by tools/port10. Put the discs' contents in build/D3C1.0 (Tome-1, Tome-2, Tome-3), then Set up once: it reads the 1.0 and 2.7.7 file layouts and takes a few minutes. Its first step needs the Unicorn emulator in a private Python environment: run python3 -m venv build/port10/venv, then build/port10/venv/bin/python3 -m pip install unicorn. Port converts an arena into the loose folder in your save folder (Port all does every arena in one go); Play starts the game in it with a throwaway developer hero, and in a normal game Nek the Brawler in New Tristram sends heroes to the ported arenas that look finished, starting at a random one. Each arena's area is called by its own name (1.0's, from your disc, for the four that had one). The list also has four other 1.0 worlds 2.7.7 lacks: the PvP Training Inn and Training Ground, Diablo's Taunt Realm in the Spire, and the ruined cathedral room 1.0's title screen showed (Tod_LoadScreen). Nothing converted leaves your computer. A few 1.0 actors are still left out (Keep's steam vents, the crypts' barricades). Progress shows in the build output.</p>
 </section>
 
 <section data-panel="controls" hidden>
@@ -766,6 +766,7 @@ function drawArenas(s) {
     !a.disc ? "Put the 1.0 discs' contents in build/D3C1.0 first." :
     !a.ready ? (s.built ? "Set up once to read the two versions' layouts." : "Build first, then set up.") : "Ready.";
   $("arenasetup").disabled = a.porting || !a.disc || !s.built || s.running;
+  $("arenaall").disabled = a.porting || !a.ready || s.running;
   const key = JSON.stringify([a, s.running]);
   if (key === arenasDrawn) return;
   arenasDrawn = key;
@@ -778,6 +779,7 @@ $("arenas").addEventListener("click", async e => {
   if (!b) return;
   let r;
   if (b.id === "arenasetup") r = await (await fetch(`/port10?t=${T}`, {method: "POST", body: JSON.stringify({action: "setup"})})).json();
+  else if (b.id === "arenaall") r = await (await fetch(`/port10?t=${T}`, {method: "POST", body: JSON.stringify({action: "portall"})})).json();
   else if (b.dataset.port) r = await (await fetch(`/port10?t=${T}`, {method: "POST", body: JSON.stringify({action: "port", arena: b.dataset.port})})).json();
   else if (b.dataset.arena) r = await (await fetch(`/play?t=${T}`, {method: "POST", body: JSON.stringify({world: b.dataset.arena})})).json();
   if (r && r.error) $("arenastate").textContent = r.error;
@@ -978,6 +980,8 @@ class Handler(BaseHTTPRequestHandler):
                 arguments = ["setup", "--d3", str(game_path())]
             elif action == "port" and arena in ARENAS:
                 arguments = ["port", arena, "--out", str(save_dir() / "loose")]
+            elif action == "portall":
+                arguments = ["port", *ARENAS, "--out", str(save_dir() / "loose")]
             else:
                 return self.send({"error": "unknown request"}, code=400)
             if game_running():

@@ -9,6 +9,7 @@
 //     "Axe FlatWorld". Any other world name works too, such as "PvP_Duel_Small", the PvP
 //     dueling world. D3_LOAD_WORLD, when starting the game, overrides it (empty for the menus).
 //     D3_SCENE_SWAP=<old>:<new> swaps a scene for another (see D3ModSceneSwap below).
+//     D3_SUBSCENE=<n> picks sub-scene <n> in every generated cluster (D3ModSubSceneOverride).
 // D3_MOD_BLIZZCON=1  the BlizzCon show-floor demo, as the -blizzcon argument starts it: an
 //     offline party of level-70 demo heroes, the title screen goes straight to the main menu,
 //     and the game starts in a Greater Rift. The demo's title screen loaded fewer UI files
@@ -112,6 +113,25 @@ void D3ModSceneRegister()
     {
         SNOFileAddEntry(SNOTOC::TT_CORE, tFile.snoGroup, tFile.uGuid, tFile.szName);
     }
+}
+
+// D3_SUBSCENE=<n>: the -subscenes option of Blizzard's PC builds, which the Switch release
+// still honours but never sets. A random dungeon is built from scene clusters, each of which
+// picks one of its sub-scene variants (the rooms and set pieces placed in it) at random;
+// with this set, each cluster takes its variant <n> instead, counting through its weighted
+// groups and then its default group. AppGlobals.nSubSceneOverride is set from this (Game.cpp),
+// and DRLG.cpp is patched to use it only for clusters that have a variant <n>: the release
+// leaves a cluster without one empty.
+int D3ModSubSceneOverride()
+{
+    const char * szValue = getenv("D3_SUBSCENE");
+    if (!szValue || !*szValue)
+    {
+        return -1;
+    }
+    int nIndex = atoi(szValue);
+    fprintf(stderr, "dev: sub-scene %d in every cluster that has one\n", nIndex);
+    return nIndex < 0 ? -1 : nIndex;
 }
 
 // D3_SCENE_SWAP=<old>:<new> (scene SNO numbers; <old> may be *) puts scene <new> wherever a

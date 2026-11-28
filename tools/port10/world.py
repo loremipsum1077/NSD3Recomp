@@ -148,11 +148,18 @@ def number_starts(sets, start):
     return {s: bytes(bufs[s]) for s in changed}, log
 
 
-def build(template, sno_world, scenes, level_area=None, env=None):
+WDF_DUELING_ARENA = 1 << 7
+
+
+def build(template, sno_world, scenes, level_area=None, env=None, dueling=True):
     """template: 2.7.7 world bytes. scenes: [(scene sno, x, y)]. env: {offset: bytes} to
-    write over the template's (environment()). Returns the new world bytes."""
+    write over the template's (environment()). dueling=False takes off the template's
+    dueling flag and world script. Returns the new world bytes."""
     b = bytearray(template)
     struct.pack_into('<i', b, B + 0x0, sno_world)  # RequiredDefinitionHeader.snoHandle
+    if not dueling:
+        flags = struct.unpack_from('<I', b, B + 0xb8)[0]  # WorldDefinition.uFlags
+        struct.pack_into('<I', b, B + 0xb8, flags & ~WDF_DUELING_ARENA)
     for o, data in (env or {}).items():
         b[B + o:B + o + len(data)] = data
     wsd_off, wsd_size = struct.unpack_from('<2I', b, B + 0x10)
@@ -161,6 +168,8 @@ def build(template, sno_world, scenes, level_area=None, env=None):
     sp_off, sp_size = struct.unpack_from('<2I', b, wsd + 0x10)
     assert sp_size == 0x18, 'the template should have one SceneParams'
     sp = B + sp_off
+    if not dueling:
+        struct.pack_into('<i', b, wsd + 0x74, -1)  # WorldServerData.snoScript (DuelWorld's)
     ch_off, ch_size = struct.unpack_from('<2I', b, sp + 0x0)
     assert ch_size and ch_size % CHUNK == 0, 'unexpected SceneChunk size'
     proto = bytes(b[B + ch_off:B + ch_off + CHUNK])

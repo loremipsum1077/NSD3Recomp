@@ -331,6 +331,9 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   - `NoUniqueEquip`: wear two of a unique-equipped legendary, such as a ring.
   - `AutoPickup`: walking over a legendary or set item picks it up, like gold. Items
     the hero drops stay on the ground.
+  - `NoAchievementPopups`: the banner the game shows for each achievement earned is not
+    shown, so a new game or world starts without a row of them. Achievements are still
+    earned and their rewards given.
 - `-DD3_MOD_ANCIENTS=NoPrimals`: how legendary and set items roll ancient, for drops,
   Kadala, crafting and the Cube. `NoPrimals` keeps ancients but no primal ancients;
   `None` turns ancients off; `Ancient` or `Primal` makes every level-70 legendary and
@@ -405,8 +408,12 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
   with `X1_TEST_ChallengeTestWorld` replaces that world's one scene with an unused test
   scene: `345754` is `x1_westm_Monster_Affix_Test`, a Westmarch courtyard on a cliff, and
   `121112` is `Test_EventLeavingLevelArea`, a bare test floor. The game's file list leaves
-  both scenes out, so the mod adds them when the list is read. `src/mods/dev.cpp`; turn it
-  off with `-DD3_MOD_LOAD_WORLD=`.
+  both scenes out, so the mod adds them when the list is read. `D3_SUBSCENE=<n>` is
+  the `-subscenes` option of Blizzard's PC builds, which the release still honours but
+  never sets: each scene cluster of a random dungeon takes its sub-scene variant `<n>`
+  (the rooms and set pieces placed in it) instead of a random one. Clusters with fewer
+  variants pick at random as usual; the release would leave them empty. `src/mods/dev.cpp`;
+  turn it off with `-DD3_MOD_LOAD_WORLD=`.
 - `-DD3_MOD_BLIZZCON=1`: the BlizzCon show-floor demo, as `-blizzcon` starts it: an
   offline party of level-70 demo heroes, and Continue goes straight into a Greater Rift.
   Your own heroes are not changed (the game's settings file may be). The demo's title
@@ -472,6 +479,27 @@ them to 2.7.7's layouts so the Loose Files mod can load them. Nothing of either 
 this repository: the conversion reads your own copies, and its results stay in `build/`
 and your save folder. Never commit them.
 
+Four other 1.0 worlds that 2.7.7 lacks are ported the same way:
+
+- `PVP_TrainingInn`: 1.0's PvP practice room, the Tristram inn with its barkeep, an
+  artisan, a stash, six team starts and three level-60 training dummies.
+- `PVP_TrainingGround`: a flat test field with a stash, three artisans and dummies of
+  levels 5, 10 and 40.
+- `a4dun_Spire_Diablo_TauntRealm`: Diablo's Taunt Realm, a four-tile Shadow Realm space
+  in the Spire with Bile Crawler spawners and a Mallet Lord. 1.0 times it to a step of
+  the Heaven_CorruptedArch quest, but nothing in its data sends heroes there.
+- `Tod_LoadScreen`: the ruined cathedral room 1.0's title screen showed
+  (`trDun_StartScreen`), as a walkable world. 2.7.7 has neither the scene nor its model
+  and collision. The 1.0 world of that name is the load screen's and does not place this
+  scene; pairing the two is the porter's.
+
+The training rooms keep the dueling world's rules and are left out of Nek's rotation (start
+them with `D3_LOAD_WORLD` or the arenas tab's Play). The Taunt Realm and the title-screen
+cathedral are built without the dueling flag and world script, with 2.7.7's Shadow Realm
+and cathedral level areas. 2.7.7 has no
+dummies of levels 5, 10 or 60, so those are its level-40 dummy, and the Taunt Realm's unique
+Mallet Lord (gone from 2.7.7) is a normal one (`STANDINS` in `port10.py`).
+
 You need: the 1.0 discs' contents in `build/D3C1.0` (`Tome-1`, `Tome-2`, `Tome-3`, each
 with `Diablo III/Data_D3/PC/MPQs/<archive>.MPQ/<group>/<file>` extracted, and the Mac
 client `Diablo III.app` on the first), your 2.7.7 dump in `game/2.7.7`, a build with
@@ -502,8 +530,13 @@ D3_LOAD_WORLD=PvP_Neph_Arena build/macos/d3
 ```
 
 In a game, Nek the Brawler in New Tristram (2.7.7's brawling) sends heroes to the ported
-arenas instead of his own dueling world, each arena in turn; `D3_DUEL_ARENA=<world name>`
-picks one and `D3_DUEL_ARENA=off` keeps his. The arenas are built from that world, so they
+arenas instead of his own dueling world, each in turn from a random one. `port` writes
+`arenas.txt` in the loose folder: the arenas that look finished are in his rotation, the
+unfinished ones (below) are not; `D3_DUEL_ARENA=<world name>` picks any arena and
+`D3_DUEL_ARENA=off` keeps his world. Each arena's area is called by its own name rather
+than the dueling world's "Scorched Chapel": 1.0's name, read from your disc's
+`LevelAreaNames` at port time, for the four that had one (Maze, Octagon, Pillar, Stairs),
+and a plain one (`ARENA_NAMES` in `port10.py`) for the rest. The arenas are built from that world, so they
 keep its rules: dueling turns on as a hero arrives, heroes start at the arena's start
 markers, and they leave by teleporting to town. With the Cheats mod, the `brawl` command
 (`<save>/cheats/commands.txt`) warps the hero as Nek does.
@@ -530,12 +563,11 @@ What carries over and what does not:
   1.0's `NoWeather` placeholder (PvP_Crypt_Arena_02, PvP_Garden_Arena) keeps the
   template's instead: NoWeather has no sun, and 2.7.7 lights a scene from its weather's
   sun, using the baked lightmap only as its shadow.
-- The arenas' health-globe spawner, which 2.7.7 no longer has, is replaced by 2.7.7's
-  PvP healing well (`STANDINS` in `port10.py`).
 - Actors 2.7.7 no longer has are converted when they are scenery or an effect with only a
   model (`ACTORS` in `port10.py`): PvP_Map2's grey-box walls and buildings, the caOut
   arena's coals and the waypoint pieces in caOut and the sewer. Markers naming the others
-  are dropped, and `port` lists them: Keep's steam vents (they need animation sets), a
+  are dropped, and `port` lists them: the health-globe spawner (2.7.7 has no PvP one; its
+  `PVP_HealingWell` is a placeholder with a Demon Hunter sentry's model), Keep's steam vents (they need animation sets), a
   barricade in each crypt and PVP_Pillar_01's test pressure plates (gizmos).
 - Start markers become entrances 2.7.7's brawling can use: each gets a start-location
   number 2.7.7 knows, once per arena. Several 1.0 arenas number theirs 0 (the town's),
@@ -544,7 +576,8 @@ What carries over and what does not:
   (PvP_Map2 has one start).
 - Textures the arenas have that 2.7.7 lacks (PvP_Map2's and PvP_Octagon_Arena_01's main
   textures, the tiles' masks and baked lightmaps) are converted: DXT1, DXT3 and DXT5 with
-  one face. 1.0 stores each level's blocks split into planes (DXT1: all the colour
+  one face, including those whose first level is above 0 (they still store every level).
+  1.0 stores each level's blocks split into planes (DXT1: all the colour
   endpoints, then all the selectors), which are put back together, as the 1.0 client does
   when it loads them; the levels are then tiled for the Switch's GPU and packaged as the
   NVN texture packages 2.7.7 loads. 1.0's colour lookup tables (uncompressed 512x512, 8x8
@@ -553,9 +586,9 @@ What carries over and what does not:
   texture (`mmap_<scene>`, found by name) is converted too. Other formats are listed by
   `port` as not converted.
 - Seen in the game: all 16 load, draw and are lit by their own weather. Butcher, the
-  sewer, caOut, Neph, both Zolt arenas and Crypt_Arena_01 look finished. Some were
+  sewer, caOut, Neph, both Zolt arenas, both crypts and the Maze look finished. Some were
   unfinished in 1.0 and look it: PvP_CraterST_Arena's ground, PvP_Garden_Arena,
-  PvP_Keep_Arena, PVP_Pillar_01 and PvP_Stairs_Arena_01 are grey boxes (untextured or
+  PvP_Keep_Arena, PVP_Pillar_01, PvP_Stairs_Arena_01 and PvP_Octagon_Arena_01 are grey boxes (untextured or
   placeholder materials in the 1.0 files), and Keep's own weather (a3Dun_Keep_A_Forge_PVP)
   has no sun, so it is very dark. Map2, Maze, Octagon, Pillar and Stairs have no minimap:
   1.0 ships none for them. Players start where the 1.0 start markers put them, near the

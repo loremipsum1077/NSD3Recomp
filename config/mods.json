@@ -70,10 +70,10 @@
     "id": "D3_MOD_QOL",
     "title": "Quality of life",
     "group": "Gameplay",
-    "description": "Small changes for playing alone offline. Instant portal and identify skip the Town Portal channel, the wait when identifying an item and the Book of Cain's reading. Instant crafting skips the blacksmith's, the Mystic's and Kanai's Cube's waits. A free Cube still needs the materials to start a recipe but keeps them, and its gold; the item a recipe changes is still used up. Gem upgrades always succeed at the Urshi, or one upgrade takes a gem to rank 150. Any socket takes any gem, legendary gems included (a normal gem gives no bonus where the game has none for it). Any slot puts armour and jewellery in any armour or jewellery slot, so a ring can go on the head; weapons and off-hands stay in the hands. Unique-equipped legendaries, such as some rings, can be worn twice. Auto-pickup picks up legendary and set items when the hero walks over them, like gold.",
+    "description": "Small changes for playing alone offline. Instant portal and identify skip the Town Portal channel, the wait when identifying an item and the Book of Cain's reading. Instant crafting skips the blacksmith's, the Mystic's and Kanai's Cube's waits. A free Cube still needs the materials to start a recipe but keeps them, and its gold; the item a recipe changes is still used up. Gem upgrades always succeed at the Urshi, or one upgrade takes a gem to rank 150. Any socket takes any gem, legendary gems included (a normal gem gives no bonus where the game has none for it). Any slot puts armour and jewellery in any armour or jewellery slot, so a ring can go on the head; weapons and off-hands stay in the hands. Unique-equipped legendaries, such as some rings, can be worn twice. Auto-pickup picks up legendary and set items when the hero walks over them, like gold. No achievement popups keeps the banner the game shows for each achievement off the screen (they are still earned), so a new game starts without a row of them.",
     "type": "multi",
     "default": "InstantPortal,InstantIdentify,InstantCraft",
-    "pattern": "^(InstantPortal|InstantIdentify|InstantCraft|FreeCube|GemUpgrade|GemMax|AnySocket|AnySlot|NoUniqueEquip|AutoPickup)(,(InstantPortal|InstantIdentify|InstantCraft|FreeCube|GemUpgrade|GemMax|AnySocket|AnySlot|NoUniqueEquip|AutoPickup))*$",
+    "pattern": "^(InstantPortal|InstantIdentify|InstantCraft|FreeCube|GemUpgrade|GemMax|AnySocket|AnySlot|NoUniqueEquip|AutoPickup|NoAchievementPopups)(,(InstantPortal|InstantIdentify|InstantCraft|FreeCube|GemUpgrade|GemMax|AnySocket|AnySlot|NoUniqueEquip|AutoPickup|NoAchievementPopups))*$",
     "choices": [
       "InstantPortal",
       "InstantIdentify",
@@ -84,7 +84,8 @@
       "AnySocket",
       "AnySlot",
       "NoUniqueEquip",
-      "AutoPickup"
+      "AutoPickup",
+      "NoAchievementPopups"
     ],
     "labels": [
       "Instant Town Portal",
@@ -96,7 +97,8 @@
       "Any gem in any socket",
       "Armour and jewellery in any slot",
       "Wear two of a unique-equipped legendary",
-      "Auto-pickup legendary and set items"
+      "Auto-pickup legendary and set items",
+      "No achievement popups"
     ]
   },
   {

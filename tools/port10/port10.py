@@ -102,12 +102,59 @@ ARENAS = {
     "PvP_Stairs_Arena_01": ["PVP_Stairs_Arena_01_"],
     "PvP_Zolt_Arena": ["PvP_Zolt_Arena"],
     "PvP_Zolt_Ruins_Arena": ["PvP_Zolt_Ruins_Arena"],
+    # Not arenas, but built the same way: 1.0's PvP practice rooms (the Tristram inn and a
+    # flat field, with training dummies) and Diablo's Taunt Realm, a four-tile Shadow Realm
+    # space in the Spire that 2.7.7 no longer has.
+    "PVP_TrainingInn": ["PVP_TrainingInn"],
+    "PVP_TrainingGround": ["PVP_TrainingGround"],
+    "a4dun_Spire_Diablo_TauntRealm": ["a4dun_Spire_Diablo_TauntRealm_"],
+    # 1.0's title-screen set, a ruined cathedral room, as a world of its own. The 1.0 world
+    # of that name is the load screen's; it does not place this scene, so pairing them is
+    # ours.
+    "Tod_LoadScreen": ["trDun_StartScreen"],
+}
+# Worlds that are not for dueling: the template's dueling flag and script are taken off and
+# their scenes get this 2.7.7 level area instead of the dueling world's.
+NOT_DUELING = {
+    "a4dun_Spire_Diablo_TauntRealm": "a4dun_Diablo_ShadowRealm_01",
+    "Tod_LoadScreen": "a1_trDun_Level01",
 }
 NAV_SQUARE = 2.5  # a navmesh square's width in world units
-# 1.0 actors the arenas place that 2.7.7 no longer has, and the 2.7.7 actor put in their
-# place: 1.0 SNO -> (1.0 name, 2.7.7 Actor name).
+# What the game calls each arena (shown where it would say "Scorched Chapel", the dueling
+# world's area) and whether Nek the Brawler sends heroes there. Four have a name in 1.0's
+# LevelAreaNames, read from the disc at port time (1.0 label); the others get the name
+# here. The unfinished ones (blockout, test or untextured maps) are left out of Nek's
+# rotation and are still reachable with D3_DUEL_ARENA=<world>.
+ARENA_NAMES = {
+    "PVP_Butcher_Arena_01": ("Butcher Arena", None, True),
+    "PvP_Cald_Swr_Ver2": ("Caldeum Sewers Arena", None, True),
+    "PvP_caOut_Arena_01": ("Caldeum Outskirts Arena", None, True),
+    "PvP_CraterST_Arena": ("Crater Arena", None, False),
+    "PvP_Crypt_Arena_01": ("Crypt Arena", None, True),
+    "PvP_Crypt_Arena_02": ("Lower Crypt Arena", None, True),
+    "PvP_Garden_Arena": ("Garden Arena", None, False),
+    "PvP_Keep_Arena": ("Keep Arena", None, False),
+    "PvP_Map2": ("Test Map", None, False),
+    "PvP_Maze_Arena_01": ("Maze Arena", "PvP_Maze_01", True),
+    "PvP_Neph_Arena": ("Nephalem Arena", None, True),
+    "PvP_Octagon_Arena_01": ("Octagon Arena", "PvP_Octogon_01", False),
+    "PVP_Pillar_01": ("Pillar Arena", "PvP_Pillar_01", False),
+    "PvP_Stairs_Arena_01": ("Stairs Arena", "PvP_Stairs_01", False),
+    "PvP_Zolt_Arena": ("Zoltun Kulle Arena", None, True),
+    "PvP_Zolt_Ruins_Arena": ("Zoltun Kulle Ruins Arena", None, True),
+    "PVP_TrainingInn": ("Training Inn", None, False),
+    "PVP_TrainingGround": ("Training Ground", None, False),
+    "a4dun_Spire_Diablo_TauntRealm": ("Diablo's Taunt Realm", None, False),
+    "Tod_LoadScreen": ("Title Screen Cathedral", None, False),
+}
+# 1.0 actors 2.7.7 no longer has, placed as a 2.7.7 actor of the same kind instead: 1.0 SNO
+# -> (1.0 name, 2.7.7 Actor name). The training rooms' dummies (levels 5, 10 and 60) become
+# 2.7.7's level-40 target dummy; the Taunt Realm's unique Mallet Lord a normal one.
 STANDINS = {
-    4921: ("pvpHealthSpawner", "PVP_HealingWell"),  # 2.7.7's dueling arenas heal with this
+    51344: ("TargetDummy_Level5", "TargetDummy_Level40"),
+    112729: ("TargetDummy_Level10", "TargetDummy_Level40"),
+    170425: ("PVP_TargetDummy_Level60", "TargetDummy_Level40"),
+    221472: ("MalletDemon_A_Unique_03", "MalletDemon_A"),
 }
 # 1.0 actors the arenas place that 2.7.7 no longer has and that are converted: scenery
 # (blockout walls and buildings, waypoint bases) and effects whose only file is a model.
@@ -162,6 +209,24 @@ class Disc:
                 if sno in want and sno not in found:
                     found[sno] = "%s/%s" % (os.path.basename(os.path.dirname(path)), os.path.splitext(os.path.basename(path))[0])
         return found
+
+    def level_area_names(self):
+        """{label: text} from 1.0's English LevelAreaNames string list, or {} without it.
+        StringList.serStrings is at 0x18; each 0x50-byte StringTableEntry has serLabel at
+        0x8 and serText at 0x18 (1.0's type tables)."""
+        found = glob.glob(str(self.folder / "Tome-*" / "Diablo III" / "Data_D3" / "PC" / "MPQs" / "enUS_Text.MPQ" / "StringList" / "LevelAreaNames.stl"))
+        if not found:
+            return {}
+        b, out = open(found[0], "rb").read(), {}
+        off, size = struct.unpack_from("<2I", b, 0x10 + 0x18)
+        for i in range(size // 0x50):
+            e = 0x10 + off + i * 0x50
+            text = []
+            for at in (0x8, 0x18):
+                o, n = struct.unpack_from("<2I", b, e + at)
+                text.append(b[0x10 + o:0x10 + o + n].split(b"\0")[0].decode("utf-8", "replace"))
+            out[text[0]] = text[1]
+        return out
 
     def client_binary(self):
         found = glob.glob(str(self.folder / "Tome-*" / "Diablo III" / "Diablo III.app" / "Contents" / "MacOS" / "Diablo III"))
@@ -402,8 +467,13 @@ class Port:
         for line in log:
             say("    " + line)
         self.drain()
-        self.entrances()
-        data = world.build(self.game.sample("Worlds"), sno_world, [(s, x + dx, y + dy) for s, (x, y) in placed], env=env)
+        area = NOT_DUELING.get(world_name)
+        if area is None:
+            self.entrances()
+        else:
+            area = self.game.names[(22, area.lower())]  # LevelArea
+        data = world.build(self.game.sample("Worlds"), sno_world, [(s, x + dx, y + dy) for s, (x, y) in placed],
+                           level_area=area, env=env, dueling=area is None)
         self.write("Worlds", sno_world, w[2], data)
         say(f"  Worlds/{w[2]} ({sno_world}): {len(placed)} scenes placed")
         return w[2]
@@ -419,6 +489,24 @@ class Port:
             say("    " + line)
         for s, data in changed.items():
             self.write("MarkerSet", s, self.done[s][2], data)
+
+    def write_arenas(self, worlds):
+        """arenas.txt, for the Loose Files mod: each ported arena's world, whether Nek the
+        Brawler sends heroes there, and its name (ARENA_NAMES)."""
+        path = self.out / "arenas.txt"
+        names = self.disc.level_area_names()
+        info = {k.lower(): v for k, v in ARENA_NAMES.items()}
+        rows = {}
+        if path.exists():
+            for line in path.read_text().splitlines():
+                parts = line.split("\t")
+                if not line.startswith("#") and len(parts) == 3:
+                    rows[parts[0].lower()] = line
+        for w in worlds:
+            own, label, rotation = info[w.lower()]
+            rows[w.lower()] = f"{w}\t{int(rotation)}\t{names.get(label, own)}"
+        head = "# Arenas the Loose Files mod knows: <world>\t<1 if Nek sends heroes there>\t<name>.\n"
+        path.write_text(head + "\n".join(rows[k] for k in sorted(rows)) + "\n")
 
     def write_index(self):
         path = self.out / "index.txt"
@@ -449,6 +537,7 @@ def port(args):
             sys.exit(f"{a}: not an arena this knows (see list).")
         started.append(p.arena(names[a.lower()]))
     p.write_index()
+    p.write_arenas(started)
     if p.skipped:
         say("Not converted (what names them goes without): " + ", ".join(sorted(p.skipped.values())))
     if p.missing:

@@ -25,11 +25,14 @@
 // D3_LOOSE_LOG=1 prints each file the game opens from the folder.
 //
 // The brawler in New Tristram (PVP_Dueling_NPC) sends heroes to the dueling world,
-// PVP_Duel_Small. When index.txt adds worlds whose names start with PvP_ (the ported 1.0
-// arenas), he sends them to those instead, taking each in turn; D3_DUEL_ARENA=<world name>
-// picks one, and D3_DUEL_ARENA=off keeps the game's own world. The arenas are built from
-// PVP_Duel_Small (tools/port10/world.py), so they keep its dueling flag and its level
-// area, whose script turns dueling on as a hero enters.
+// PVP_Duel_Small. When the folder has ported 1.0 arenas, he sends them to those instead,
+// taking each in turn from a random one: the arenas arenas.txt marks with 1 (tools/port10
+// leaves the unfinished ones out), or, without arenas.txt, every world index.txt adds whose
+// name starts with PvP_. D3_DUEL_ARENA=<world name> picks one, and D3_DUEL_ARENA=off keeps
+// the game's own world. The arenas are built from PVP_Duel_Small (tools/port10/world.py),
+// so they keep its dueling flag and its level area, whose script turns dueling on as a
+// hero enters. That area is called Scorched Chapel; in an arena arenas.txt names, the
+// area's name is the arena's instead (D3ModLooseString, through the shared string hook).
 //
 // The decomp's SNOFiles.cpp is patched to ask D3ModSnoOverride for every file it opens,
 // SNOTOC.cpp to call D3ModLooseRegister once the game's file list is read, Prefetch.cpp
@@ -38,6 +41,7 @@
 // and ScriptUtil.cpp's PlayerWarpToWorld to ask D3ModDuelWorld where a warp goes.
 #include "X/Common/Definitions/Definitions.h"
 #include "X/Common/Game.h"
+#include "X/Common/GlobalSNO.h"
 #include "X/Common/SNO/SNOFiles.h"
 #include "X/Sigma/Files/XFiles.h"
 #include "X/Sigma/TypeDescriptor/TypeDescriptor.h"
@@ -51,6 +55,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -227,9 +232,38 @@ static void sDumpTypes(const char * szOut)
     exit(0);
 }
 
-// The arenas index.txt adds (worlds named PvP_*), for D3ModDuelWorld. Filled once, while the
-// game reads its file list, before any game starts.
-static std::vector<std::string> sArenas;
+SNO CGameGetCurrentWorld();  // X/Client/CGame.cpp
+
+// The ported arenas, from index.txt and arenas.txt. Filled once, while the game reads its
+// file list, before any game starts.
+struct LooseArena
+{
+    std::string sWorld;
+    uint32 uGuid;
+    bool bRotation;     // Nek sends heroes here
+    std::string sName;  // what the dueling world's area is called here, or empty
+};
+static std::vector<LooseArena> sArenaList;
+static std::vector<std::string> sArenas;  // Nek's rotation
+
+// The area name of the dueling world's level area (DuelWorld) in a ported arena: the
+// arena's own. Every other string is the game's (NULL).
+const char * D3ModLooseString(SNO snoStringList, const char * szLabel)
+{
+    if (!szLabel || strcmp(szLabel, "DuelWorld") != 0 || snoStringList != GlobalSNOGet(GLOBALSNO_STRINGLIST_LEVEL_AREAS))
+    {
+        return NULL;
+    }
+    SNO snoWorld = CGameGetCurrentWorld();
+    for (const LooseArena & a : sArenaList)
+    {
+        if ((SNO)a.uGuid == snoWorld && !a.sName.empty())
+        {
+            return a.sName.c_str();
+        }
+    }
+    return NULL;
+}
 
 // PlayerWarpToWorld's world name, or the arena to go to instead when it is the dueling world.
 LPCSTR D3ModDuelWorld(LPCSTR szWorldName)
@@ -250,7 +284,7 @@ LPCSTR D3ModDuelWorld(LPCSTR szWorldName)
     }
     else if (!sArenas.empty())
     {
-        static std::atomic<unsigned> snNext{0};
+        static std::atomic<unsigned> snNext{std::random_device{}()};
         szArena = sArenas[snNext++ % sArenas.size()].c_str();
     }
     if (szArena != szWorldName)
@@ -292,10 +326,51 @@ BOOL D3ModLooseRegister(BOOL bRead)
             nAdded++;
             if (nGroup == WORLD_SNO && strncasecmp(szLine + nNameAt, "PvP_", 4) == 0)
             {
-                sArenas.push_back(szLine + nNameAt);
+                sArenaList.push_back({szLine + nNameAt, uGuid, true, ""});
             }
         }
         fclose(f);
+    }
+    // arenas.txt: <world>\t<1 if Nek sends heroes there>\t<name>, one arena per line.
+    f = fopen((sFolder + "/arenas.txt").c_str(), "r");
+    if (f)
+    {
+        for (LooseArena & a : sArenaList)
+        {
+            a.bRotation = false;
+        }
+        char szLine[512];
+        while (fgets(szLine, sizeof szLine, f))
+        {
+            szLine[strcspn(szLine, "\r\n")] = 0;
+            char * szTab = strchr(szLine, '\t');
+            char * szName = szTab ? strchr(szTab + 1, '\t') : NULL;
+            if (szLine[0] == '#' || !szName)
+            {
+                continue;
+            }
+            *szTab = 0;
+            for (LooseArena & a : sArenaList)
+            {
+                if (strcasecmp(a.sWorld.c_str(), szLine) == 0)
+                {
+                    a.bRotation = szTab[1] == '1';
+                    a.sName = szName + 1;
+                }
+            }
+        }
+        fclose(f);
+    }
+    for (const LooseArena & a : sArenaList)
+    {
+        if (a.bRotation)
+        {
+            sArenas.push_back(a.sWorld);
+        }
+    }
+    if (!sArenaList.empty())
+    {
+        fprintf(stderr, "loose: %zu arenas, %zu in Nek's rotation\n", sArenaList.size(), sArenas.size());
     }
     fprintf(stderr, "loose: files from %s (%d added by index.txt)\n", sFolder.c_str(), nAdded);
     return bRead;

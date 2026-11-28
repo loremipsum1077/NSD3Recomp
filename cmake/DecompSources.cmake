@@ -272,6 +272,14 @@ if(D3_MOD_LOAD_WORLD OR D3_MOD_BLIZZCON OR D3_MOD_DEV_TOOLS OR D3_MOD_LOOSE_FILE
     d3_patch_source("X/Server/SWorld.cpp"
         --replace "        SPlayerGhostedBuffApply(ACDGet(ptPlayerToUse->idPlayerACD), FALSE)$<SEMICOLON>"
                   "        if (ACDTryToGet(ptPlayerToUse->idPlayerACD)) SPlayerGhostedBuffApply(ACDGet(ptPlayerToUse->idPlayerACD), FALSE)$<SEMICOLON>")
+    # D3_SUBSCENE=<n> (dev.cpp): the release's debug sub-scene override, set at start-up and
+    # used only for clusters that have that variant.
+    d3_patch_source("X/Common/Game.cpp"
+        --replace "    sgtAppGlobals.nSubSceneOverride = -1$<SEMICOLON>"
+                  "    { int D3ModSubSceneOverride()$<SEMICOLON> sgtAppGlobals.nSubSceneOverride = D3ModSubSceneOverride()$<SEMICOLON> }")
+    d3_patch_source("X/Common/DRLG.cpp"
+        --replace "        if (tAppGlobals.nSubSceneOverride >= 0)"
+                  "        if (tAppGlobals.nSubSceneOverride >= 0 && [&] { int32 n = tCluster.tDefaultSubSceneGroup.nNumSubScenes$<SEMICOLON> for (int32 g = 0$<SEMICOLON> g < tCluster.nNumSubSceneGroups$<SEMICOLON> g++) n += tCluster.arSubSceneGroups[g].nNumSubScenes$<SEMICOLON> return tAppGlobals.nSubSceneOverride < n$<SEMICOLON> }())")
     # Two test scenes missing from the game's file list are added once it is read (dev.cpp).
     d3_patch_source("X/Common/SNO/SNOTOC.cpp"
         --replace "    return Read(sPrepareSNOFilesFromTOC, sAppendEntryToSNOFiles, NULL) != FALSE$<SEMICOLON>"
@@ -344,6 +352,9 @@ endif()
 
 # Mods that use the shared hooks (src/mods/hooks.cpp) add their name to this list.
 set(D3_SHARED_HOOKS)
+if(D3_MOD_LOOSE_FILES)
+    list(APPEND D3_SHARED_HOOKS LOOSE)  # strings: the ported arenas' names
+endif()
 
 # D3_MOD_VENDOR=1 puts Deckard Cain back in New Tristram as a vendor of custom legendary
 # gems, each with an extra power that fires every so many kills (src/mods/vendor.cpp).
@@ -492,8 +503,11 @@ endif()
 #   AnySocket      any gem fits any socket, legendary gems included;
 #   AnySlot        armour and jewellery go in any armour or jewellery slot;
 #   NoUniqueEquip  wear two of a unique-equipped legendary, such as a ring;
-#   AutoPickup     walking over a legendary or set item picks it up.
-set(D3_MOD_QOL "" CACHE STRING "Mod: quality-of-life tweaks (InstantPortal, InstantIdentify, InstantCraft, FreeCube, GemUpgrade, GemMax, AnySocket, AnySlot, NoUniqueEquip, AutoPickup; comma-separated); empty for off")
+#   AutoPickup     walking over a legendary or set item picks it up;
+#   NoAchievementPopups  achievements are still earned (and their rewards given), but the
+#                  banner the game shows for each is not, so a new game or world starts
+#                  without a row of them.
+set(D3_MOD_QOL "" CACHE STRING "Mod: quality-of-life tweaks (InstantPortal, InstantIdentify, InstantCraft, FreeCube, GemUpgrade, GemMax, AnySocket, AnySlot, NoUniqueEquip, AutoPickup, NoAchievementPopups; comma-separated); empty for off")
 if(D3_MOD_QOL)
     set(_ui "X/Client/UserInterface/Console")
     set(_crafting "X/Server/Crafting/SItemCrafting.cpp")
@@ -560,6 +574,12 @@ if(D3_MOD_QOL)
                         "static BOOL sD3ModGemHasEffect(GBID gbidGem, GBHandle hgbInto) { GBHandleList lstEffects(GBGetHandlePool())$<SEMICOLON> GBEnumerate(GB_SOCKETED_EFFECTS, lstEffects)$<SEMICOLON> BOOL bFound = FALSE$<SEMICOLON> POS pos = lstEffects.GetHeadPosition()$<SEMICOLON> while (pos && !bFound) { const GBHandle & hGB = lstEffects.GetNext(pos)$<SEMICOLON> const GameBalanceDefinition * pdefGB$<SEMICOLON> SocketedEffectsTableEntry * ptEffectDef = (SocketedEffectsTableEntry *)GBLockR(hGB, pdefGB, TRUE)$<SEMICOLON> bFound = ptEffectDef->gbidItemBeingSocketed == gbidGem && (ptEffectDef->gbidItemTypeSocketedInto == StringToGBID(\"All\") || ItemIsOfType(hgbInto, ptEffectDef->gbidItemTypeSocketedInto))$<SEMICOLON> GBUnlockR(pdefGB)$<SEMICOLON> } return bFound$<SEMICOLON> } static BOOL sD3ModRemoveSocketed(ActorCommonData &, const ActorCommonData &)$<SEMICOLON> BOOL ItemRemoveSocketedItemAttributes(ActorCommonData & a, const ActorCommonData & b) { if (ItemIsGem(a.hGB.gbid) && !ItemIsJewel(a.hGB.gbid) && !sD3ModGemHasEffect(a.hGB.gbid, b.hGB)) { return TRUE$<SEMICOLON> } return sD3ModRemoveSocketed(a, b)$<SEMICOLON> } static BOOL sD3ModRemoveSocketed(ActorCommonData & tACDItemToSocket, const ActorCommonData & tACDItemSocketedInto)"
                 --replace "BOOL ItemAddSocketedItemAttributes(ActorCommonData & tACDItemToSocket, const ActorCommonData & tACDItemSocketedInto)"
                         "static BOOL sD3ModAddSocketed(ActorCommonData &, const ActorCommonData &)$<SEMICOLON> BOOL ItemAddSocketedItemAttributes(ActorCommonData & a, const ActorCommonData & b) { if (ItemIsGem(a.hGB.gbid) && !ItemIsJewel(a.hGB.gbid) && !sD3ModGemHasEffect(a.hGB.gbid, b.hGB)) { return TRUE$<SEMICOLON> } return sD3ModAddSocketed(a, b)$<SEMICOLON> } static BOOL sD3ModAddSocketed(ActorCommonData & tACDItemToSocket, const ActorCommonData & tACDItemSocketedInto)")
+        elseif(_option STREQUAL "NoAchievementPopups")
+            # The client's handler for an awarded achievement: the banner (fanfare) and its
+            # console unlock note are skipped; the profile award above it still happens.
+            d3_patch_source("X/Client/Network/ClientMessageReceive.cpp"
+                --replace "                        if (!(ptDef->m_flags & 0x500))"
+                          "                        if (false && !(ptDef->m_flags & 0x500))")
         elseif(_option STREQUAL "AnySlot")
             # Armour and jewellery in any armour or jewellery slot (not the hands).
             d3_patch_source("X/Common/ActorInventory.cpp"
