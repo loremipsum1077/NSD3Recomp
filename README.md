@@ -466,8 +466,8 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
 ### 1.0 arenas
 
 Diablo III's 1.0 PC release (2012) had PvP arenas the later game dropped. Their scenes,
-models, collision, marker sets, textures, materials, lights, particles and weather are
-still on the 1.0 discs, and `tools/port10` converts
+models, collision, marker sets, textures, materials, lights, particles, weather and some
+scenery actors are still on the 1.0 discs, and `tools/port10` converts
 them to 2.7.7's layouts so the Loose Files mod can load them. Nothing of either game is in
 this repository: the conversion reads your own copies, and its results stay in `build/`
 and your save folder. Never commit them.
@@ -490,11 +490,18 @@ python3 tools/port10/port10.py port PvP_Neph_Arena
 D3_LOAD_WORLD=PvP_Neph_Arena build/macos/d3
 ```
 
+In a game, Nek the Brawler in New Tristram (2.7.7's brawling) sends heroes to the ported
+arenas instead of his own dueling world, each arena in turn; `D3_DUEL_ARENA=<world name>`
+picks one and `D3_DUEL_ARENA=off` keeps his. The arenas are built from that world, so they
+keep its rules: dueling turns on as a hero arrives, heroes start at the arena's start
+markers, and they leave by teleporting to town. With the Cheats mod, the `brawl` command
+(`<save>/cheats/commands.txt`) warps the hero as Nek does.
+
 `setup` reads both versions' type tables (1.0's by running the 1.0 Mac client's start-up
 code under Unicorn; 2.7.7's from the build), 2.7.7's file list and a few 2.7.7 files used
 as templates into `build/port10/`. `port` converts an arena and every scene, model,
-collision mesh, marker set, texture, material, light, particle effect and weather it uses
-that 2.7.7 lacks, field by field from the two type tables, and builds a world for it from
+collision mesh, marker set, texture, material, light, particle effect, weather and
+scenery actor it uses that 2.7.7 lacks, field by field from the two type tables, and builds a world for it from
 2.7.7's dueling arena. `list` shows the 16 arenas;
 `selftest` converts a marker set both versions ship and compares it with 2.7.7's copy.
 
@@ -514,10 +521,16 @@ What carries over and what does not:
   sun, using the baked lightmap only as its shadow.
 - The arenas' health-globe spawner, which 2.7.7 no longer has, is replaced by 2.7.7's
   PvP healing well (`STANDINS` in `port10.py`).
-- Markers that name an actor 2.7.7 no longer has are dropped: Keep's steam vents, the
-  caOut arena's coals, waypoint pieces, a barricade in each crypt, PVP_Pillar_01's test
-  pressure plates and PvP_Map2's grey-box walls. Actors are not converted. `port` lists
-  them.
+- Actors 2.7.7 no longer has are converted when they are scenery or an effect with only a
+  model (`ACTORS` in `port10.py`): PvP_Map2's grey-box walls and buildings, the caOut
+  arena's coals and the waypoint pieces in caOut and the sewer. Markers naming the others
+  are dropped, and `port` lists them: Keep's steam vents (they need animation sets), a
+  barricade in each crypt and PVP_Pillar_01's test pressure plates (gizmos).
+- Start markers become entrances 2.7.7's brawling can use: each gets a start-location
+  number 2.7.7 knows, once per arena. Several 1.0 arenas number theirs 0 (the town's),
+  repeat one or leave it out; those get free `PVP_Neutral_SpawnLocation` numbers. The mod
+  also keeps the game from reading past an empty list when no entrance qualifies
+  (PvP_Map2 has one start).
 - Textures the arenas have that 2.7.7 lacks (PvP_Map2's and PvP_Octagon_Arena_01's main
   textures, the tiles' masks and baked lightmaps) are converted: DXT1, DXT3 and DXT5 with
   one face. 1.0 stores each level's blocks split into planes (DXT1: all the colour
@@ -535,7 +548,9 @@ What carries over and what does not:
   placeholder materials in the 1.0 files), and Keep's own weather (a3Dun_Keep_A_Forge_PVP)
   has no sun, so it is very dark. Map2, Maze, Octagon, Pillar and Stairs have no minimap:
   1.0 ships none for them. Players start where the 1.0 start markers put them, near the
-  arena's corners.
+  arena's corners. Nek sends heroes into each of the 16 without trouble. The converted
+  actors load (caOut's waypoint bases load their model near the start), but none has
+  been seen on screen yet; Map2's walls stand in one far tile (x05_y07).
 
 ## Measuring progress
 

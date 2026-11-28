@@ -76,6 +76,78 @@ def environment(old_world, template, game_ids, port=None):
     return out, log
 
 
+# Entrances. 2.7.7's brawling puts a hero at one of the dueling world's entrances, picked at
+# random (PVPGetDuelingEntranceGUID): the markers whose actor is a portal destination, such
+# as Start_Location_0, and whose TAG_MARKER_PORTAL_DEST_ENTRANCE_NUMBER is a start location
+# 2.7.7's globals.glo names, each number once (DRLG.cpp records only the first). Several
+# 1.0 arenas number their starts 0 (the town's start), repeat a number, or leave it out;
+# those starts get free PVP_Neutral_SpawnLocation numbers.
+MARKER = 0x58               # sizeof(Marker)
+ENTRANCE_TAG = 0x80a04      # TAG_MARKER_PORTAL_DEST_ENTRANCE_NUMBER
+PVP_ENTRANCES = (131, 134, 135, 136, 137, 138, 404, 405)  # PVP_Team*_SpawnLocation_*
+NEUTRAL = tuple(range(288, 320))  # PVP_Neutral_SpawnLocation_00 to _31
+
+
+def _markers(b):
+    off, size = struct.unpack_from('<2I', b, B + 0xc)  # MarkerSetDefinition.serMarkers
+    return [B + off + i * MARKER for i in range(size // MARKER)]
+
+
+def _actor(b, m):
+    return struct.unpack_from('<i', b, m + 0x2c)[0]  # Marker.snoname.snoHandle
+
+
+def _tags(b, m):
+    """A marker's tag map entries, [type, key, value bytes]: a count, then 12-byte entries."""
+    to, ts = struct.unpack_from('<2I', b, m + 0x30)
+    if not ts:
+        return []
+    n = struct.unpack_from('<I', b, B + to)[0]
+    return [list(struct.unpack_from('<2I4s', b, B + to + 4 + k * 12)) for k in range(n)]
+
+
+def _append(b, data):
+    while len(b) % 8:
+        b.append(0)
+    at = len(b) - B
+    b.extend(data)
+    return at
+
+
+def _set_tags(b, m, entries):
+    data = struct.pack('<I', len(entries)) + b''.join(struct.pack('<2I4s', *e) for e in entries)
+    struct.pack_into('<2I', b, m + 0x30, _append(b, data), len(data))
+
+
+def number_starts(sets, start):
+    """sets: {marker set sno: bytes}, one arena's. start: Start_Location_0's SNO. Returns the
+    sets it changed and log lines."""
+    bufs = {s: bytearray(d) for s, d in sets.items()}
+    used, todo, kept = set(), [], 0
+    for s in sorted(bufs):
+        b = bufs[s]
+        for m in _markers(b):
+            if _actor(b, m) != start:
+                continue
+            num = next((struct.unpack('<I', v)[0] for _, k, v in _tags(b, m) if k == ENTRANCE_TAG), None)
+            if num in PVP_ENTRANCES + NEUTRAL and num not in used:
+                used.add(num)
+                kept += 1
+            else:
+                todo.append((s, m))
+    free = [n for n in NEUTRAL if n not in used]
+    changed = set()
+    for (s, m), num in zip(todo, free):
+        b = bufs[s]
+        rest = [e for e in _tags(b, m) if e[1] != ENTRANCE_TAG]
+        _set_tags(b, m, [[7, ENTRANCE_TAG, struct.pack('<I', num)]] + rest)
+        changed.add(s)
+    log = ['entrances: %d starts kept their numbers, %d numbered' % (kept, min(len(todo), len(free)))]
+    if len(todo) > len(free):
+        log.append('entrances: %d starts left as they were (2.7.7 names 32 neutral ones)' % (len(todo) - len(free)))
+    return {s: bytes(bufs[s]) for s in changed}, log
+
+
 def build(template, sno_world, scenes, level_area=None, env=None):
     """template: 2.7.7 world bytes. scenes: [(scene sno, x, y)]. env: {offset: bytes} to
     write over the template's (environment()). Returns the new world bytes."""

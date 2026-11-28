@@ -16,6 +16,8 @@
 //                          difficulty
 //       cube               unlock Kanai's Cube (saved with the account, like picking it
 //                          up in the Ruins of Sescheron)
+//       brawl              go where the brawler in New Tristram sends heroes: the dueling
+//                          world, or with the Loose Files mod one of the 1.0 arenas
 //       spawn <actor> [normal|champion|rare|boss]
 //                          add a monster near the hero by its actor's SNO name, e.g.
 //                          "spawn X1_LR_Boss_MorluSpellcaster_Ice boss": Rime, the ice
@@ -379,6 +381,13 @@ void Run(const char * szLine, Player & tPlayer, ACDID idACDPlayer, ActorCommonDa
     if (strcmp(szLine, "cube") == 0)
     {
         UnlockCube(tPlayer);
+    }
+    else if (strcmp(szLine, "brawl") == 0)
+    {
+        // As the brawler's script (DuelNPC) does once his conversation ends; 10 is the
+        // reason the scripts' three-argument call passes.
+        PlayerWarpToWorld(idACDPlayer, "PVP_Duel_Small", "DuelWorld_Entrance", 0.0f, (PlayerWarpReason)10);
+        Say("sent to the dueling world");
     }
     else if (sscanf(szLine, "cache %d %d", &nAct, &nValue) >= 1)
     {

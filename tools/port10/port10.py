@@ -3,7 +3,8 @@
 Loose Files mod (D3_MOD_LOOSE_FILES, src/mods/loose_files.cpp).
 
 1.0 shipped arenas that later versions dropped. Their scenes, models, collision, marker
-sets, textures, materials, lights, particles and weather are still on the 1.0 discs; this
+sets, textures, materials, lights, particles, weather and some scenery actors are still on
+the 1.0 discs; this
 converts them from 1.0's 32-bit layouts to 2.7.7's 64-bit ones with the two versions' own
 type descriptor tables (textures in texture.py), and builds a 2.7.7 world that places the
 scenes and keeps the arena's environment (world.py). Nothing of the game is in this
@@ -64,6 +65,7 @@ GROUPS = {
     "Light": (23, "Light", ".lit", "Light"),
     "Particle": (27, "Particle", ".prt", "Particle"),
     "Weather": (47, "Weather", ".wth", "Weather"),
+    "Actor": (1, "Actor", ".acr", "Actor"),  # only those in ACTORS
 }
 # 2.7.7 files whose headers (version, asset version, layout hash) the converted files get,
 # and the world every ported world is built from (the PvP dueling arena's).
@@ -78,6 +80,7 @@ SAMPLES = {
     "Light": "Light\\a2dun_Aqd_torch.lit",
     "Particle": "Particle\\a2dun_aqd_TorchFire.prt",
     "Weather": "Weather\\a2dun_Zolt_Weather1.wth",
+    "Actor": "Actor\\PVP_HealingWell.acr",
 }
 # The 1.0 arena worlds and the scenes each is made of: a name, or a prefix ending in _ for
 # tiled arenas (their tiles' names give the layout, world.tile_position).
@@ -105,6 +108,14 @@ NAV_SQUARE = 2.5  # a navmesh square's width in world units
 STANDINS = {
     4921: ("pvpHealthSpawner", "PVP_HealingWell"),  # 2.7.7's dueling arenas heal with this
 }
+# 1.0 actors the arenas place that 2.7.7 no longer has and that are converted: scenery
+# (blockout walls and buildings, waypoint bases) and effects whose only file is a model.
+# The others stay out: the steam vents need animation sets and the pressure plate and
+# barricade are gizmos, none of which this converts.
+ACTORS = {n.lower() for n in (
+    "design_wall2x4x10ft", "design_building22x24x18ft", "design_buildingNoWalls12x20x14ft",
+    "a1_Global_WaypointBase", "a1_Global_WaypointBannerBase", "PvP_caOut_coals",
+)}
 
 
 def say(*a):
@@ -268,6 +279,7 @@ class Port:
         self.missing = {}      # sno -> count, named by a ported file but in neither version
         self.skipped = {}      # 1.0 sno -> name, files that could not be converted
         self.next_free = max(game.max_id, max(disc.by_id)) + 1
+        self.marker_sets = set()  # the marker sets written for the arena being ported
 
     def number_for(self, entry):
         """The 2.7.7 number a 1.0 file gets: its own, unless 2.7.7 uses that number."""
@@ -285,19 +297,19 @@ class Port:
         """A SNO number a converted file names -> the number it names in 2.7.7."""
         if sno in (0, -1):
             return sno
+        if sno in STANDINS:
+            return self.game.names[(1, STANDINS[sno][1].lower())]
         entry = self.disc.by_id.get(sno)
-        if entry is None:
-            if sno in STANDINS:
-                return self.game.names[(1, STANDINS[sno][1].lower())]
-            if sno > 0 and sno not in self.game.ids:
-                self.missing[sno] = self.missing.get(sno, 0) + 1
-            return sno
-        group, _, name, _ = entry
-        num = GROUPS[group][0]
-        same = self.game.names.get((num, name.lower()))
-        if same is not None:
-            return same  # 2.7.7 still ships this file: use its copy
-        return self.number_for(entry)
+        if entry is not None:
+            group, _, name, _ = entry
+            same = self.game.names.get((GROUPS[group][0], name.lower()))
+            if same is not None:
+                return same  # 2.7.7 still ships this file: use its copy
+            if group != "Actor" or name.lower() in ACTORS:
+                return self.number_for(entry)
+        if sno > 0 and sno not in self.game.ids:
+            self.missing[sno] = self.missing.get(sno, 0) + 1
+        return sno
 
     def has(self, group, sno):
         g = self.game.ids.get(sno)
@@ -312,6 +324,8 @@ class Port:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         self.done[sno] = (num, sno, name)
+        if group == "MarkerSet":
+            self.marker_sets.add(sno)
 
     def drain(self):
         while self.queue:
@@ -340,6 +354,7 @@ class Port:
         if not w or not scenes:
             sys.exit(f"{world_name}: not on the disc.")
         say(f"{w[2]}: {len(scenes)} scene{'s' if len(scenes) != 1 else ''}")
+        self.marker_sets = set()
         placed = []
         for entry in scenes:
             src = open(entry[3], "rb").read()
@@ -371,10 +386,23 @@ class Port:
         for line in log:
             say("    " + line)
         self.drain()
+        self.entrances()
         data = world.build(self.game.sample("Worlds"), sno_world, [(s, x + dx, y + dy) for s, (x, y) in placed], env=env)
         self.write("Worlds", sno_world, w[2], data)
         say(f"  Worlds/{w[2]} ({sno_world}): {len(placed)} scenes placed")
         return w[2]
+
+    def entrances(self):
+        """Makes the arena's starts entrances 2.7.7's brawling can use (world.number_starts).
+        Heroes leave as they leave PVP_Duel_Small, by teleporting to town: its town portals
+        are only for the campaign's quests."""
+        start = self.game.names[(1, "start_location_0")]
+        sets = {s: (self.out / "MarkerSet" / f"{s}.mrk").read_bytes() for s in self.marker_sets}
+        changed, log = world.number_starts(sets, start)
+        for line in log:
+            say("    " + line)
+        for s, data in changed.items():
+            self.write("MarkerSet", s, self.done[s][2], data)
 
     def write_index(self):
         path = self.out / "index.txt"

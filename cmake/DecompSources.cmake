@@ -315,6 +315,18 @@ if(D3_MOD_LOOSE_FILES)
                   "    { BOOL D3ModSnoLoadLoose(int32, uint32)$<SEMICOLON> if (D3ModSnoLoadLoose(snoname.snoGroup, snoname.snoHandle)) return$<SEMICOLON> } sQueueAndStartAsyncRead(ptSNOElement, ePriority)$<SEMICOLON>"
         --replace "    return PREFETCH_UNLOADED$<SEMICOLON>"
                   "    { BOOL D3ModSnoIsLoose(int32, uint32)$<SEMICOLON> if (D3ModSnoIsLoose(ptSNOElement->tEntry.snoGroup, ptSNOElement->tEntry.uGuid)) return PREFETCH_LOADED$<SEMICOLON> } return PREFETCH_UNLOADED$<SEMICOLON>")
+    # The brawler in town (PVP_Dueling_NPC) sends heroes to PVP_Duel_Small through the
+    # scripts' PlayerWarpToWorld; the mod may send them to one of the folder's arenas instead.
+    d3_patch_source("X/Server/LuaScript/ScriptUtil.cpp"
+        --replace "    uint32 uEntranceGUID = StartingLocationNameToGUID(szEntranceName)$<SEMICOLON>"
+                  "    { LPCSTR D3ModDuelWorld(LPCSTR)$<SEMICOLON> LPCSTR szArena = D3ModDuelWorld(szWorldName)$<SEMICOLON> if (szArena != szWorldName) snoWorld = SNOFileLookupGUID(WORLD_SNO, szArena)$<SEMICOLON> } uint32 uEntranceGUID = StartingLocationNameToGUID(szEntranceName)$<SEMICOLON>")
+    # A dueling world's entrance is picked at random from those with a portal destination
+    # (respawning, those over 30 yards away). With none, the game reads past an empty list;
+    # an arena with one start (1.0's PvP_Map2) gets there, so it answers "no entrance"
+    # instead, which both callers handle (the hero stays put, or starts on the navmesh).
+    d3_patch_source("X/Server/PVP.cpp"
+        --replace "    // the original attributes SGameGlobalsGet to column 36 with RandRange_Internal: probably a macro src lacks"
+                  "    if (nPossibleGUID == 0) return uEntranceGUID$<SEMICOLON>")
     list(APPEND D3_DECOMP_SOURCES "${PROJECT_SOURCE_DIR}/src/mods/loose_files.cpp")
 endif()
 

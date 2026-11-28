@@ -24,10 +24,18 @@
 //
 // D3_LOOSE_LOG=1 prints each file the game opens from the folder.
 //
+// The brawler in New Tristram (PVP_Dueling_NPC) sends heroes to the dueling world,
+// PVP_Duel_Small. When index.txt adds worlds whose names start with PvP_ (the ported 1.0
+// arenas), he sends them to those instead, taking each in turn; D3_DUEL_ARENA=<world name>
+// picks one, and D3_DUEL_ARENA=off keeps the game's own world. The arenas are built from
+// PVP_Duel_Small (tools/port10/world.py), so they keep its dueling flag and its level
+// area, whose script turns dueling on as a hero enters.
+//
 // The decomp's SNOFiles.cpp is patched to ask D3ModSnoOverride for every file it opens,
-// SNOTOC.cpp to call D3ModLooseRegister once the game's file list is read, and Prefetch.cpp
+// SNOTOC.cpp to call D3ModLooseRegister once the game's file list is read, Prefetch.cpp
 // to load folder files through D3ModSnoLoadLoose instead of queueing an archive read (which
-// would find nothing), and to ask D3ModSnoIsLoose before it reports a file as not loaded.
+// would find nothing), and to ask D3ModSnoIsLoose before it reports a file as not loaded,
+// and ScriptUtil.cpp's PlayerWarpToWorld to ask D3ModDuelWorld where a warp goes.
 #include "X/Common/Definitions/Definitions.h"
 #include "X/Common/Game.h"
 #include "X/Common/SNO/SNOFiles.h"
@@ -38,11 +46,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 extern "C" const char * d3_save_dir(void);                             // src/nn/fs/fs.cpp
 extern "C" void d3_fs_mount(const char * name, const char * folder);  // src/nn/fs/fs.cpp
@@ -216,6 +227,39 @@ static void sDumpTypes(const char * szOut)
     exit(0);
 }
 
+// The arenas index.txt adds (worlds named PvP_*), for D3ModDuelWorld. Filled once, while the
+// game reads its file list, before any game starts.
+static std::vector<std::string> sArenas;
+
+// PlayerWarpToWorld's world name, or the arena to go to instead when it is the dueling world.
+LPCSTR D3ModDuelWorld(LPCSTR szWorldName)
+{
+    if (!szWorldName || strcasecmp(szWorldName, "PVP_Duel_Small") != 0)
+    {
+        return szWorldName;
+    }
+    const char * szChoice = getenv("D3_DUEL_ARENA");
+    if (szChoice && strcasecmp(szChoice, "off") == 0)
+    {
+        return szWorldName;
+    }
+    LPCSTR szArena = szWorldName;
+    if (szChoice && *szChoice)
+    {
+        szArena = szChoice;
+    }
+    else if (!sArenas.empty())
+    {
+        static std::atomic<unsigned> snNext{0};
+        szArena = sArenas[snNext++ % sArenas.size()].c_str();
+    }
+    if (szArena != szWorldName)
+    {
+        fprintf(stderr, "loose: the dueling world is %s this time\n", szArena);
+    }
+    return szArena;
+}
+
 // Once the game's file list is read: add the files index.txt names. Returns bRead unchanged.
 BOOL D3ModLooseRegister(BOOL bRead)
 {
@@ -246,6 +290,10 @@ BOOL D3ModLooseRegister(BOOL bRead)
             }
             SNOFileAddEntry(SNOTOC::TT_CORE, (SNOGroup)nGroup, uGuid, szLine + nNameAt);
             nAdded++;
+            if (nGroup == WORLD_SNO && strncasecmp(szLine + nNameAt, "PvP_", 4) == 0)
+            {
+                sArenas.push_back(szLine + nNameAt);
+            }
         }
         fclose(f);
     }

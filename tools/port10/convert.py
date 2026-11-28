@@ -37,7 +37,8 @@ BASIC = {
     'DT_HIGHPRECISIONPERCENT': ('<d', 8), 'DT_DATAID': ('<i', 4), 'DT_STARTLOC_NAME': ('<i', 4),
     'DT_ACTOR_GROUP': ('<i', 4), 'DT_ACTOR_ATTRIBUTE': ('<i', 4), 'DT_ANIM_TAG': ('<i', 4),
     'DT_VELOCITY': ('<f', 4), 'DT_ACCEL': ('<f', 4), 'DT_ANGULARVELOCITY': ('<f', 4),
-    'DT_ANGULARACCEL': ('<f', 4), 'DT_MASS': ('<f', 4), 'DT_TRANSLATEABLE': ('<i', 4),
+    'DT_ANGULARACCEL': ('<f', 4), 'DT_MASS': ('<f', 4), 'DT_IMPULSE': ('<f', 4),
+    'DT_TRANSLATEABLE': ('<i', 4),
     'DT_VECTOR3D': ('<3f', 12), 'Vector3D': ('<3f', 12), 'DT_VECTOR2D': ('<2f', 8),
     'Vector2D': ('<2f', 8), 'DT_IVECTOR2D': ('<2i', 8), 'IVector2D': ('<2i', 8),
     'DT_VECTOR4D': ('<4f', 16), 'DT_RGBACOLOR': ('<4B', 4), 'DT_RGBACOLORVALUE': ('<4f', 16),
@@ -204,7 +205,7 @@ class Converter:
             for i in range(n):
                 self.convert(f10['aux'], s + i * e10, f['aux'], out, d + i * e)
             return
-        if t10 in ('DT_VARIABLEARRAY', 'DT_TAGMAP'):
+        if t10 in ('DT_VARIABLEARRAY', 'DT_TAGMAP', 'DT_CSTRING'):  # a CSTRING is an array of DT_BYTE
             off, size = self.ser10(s, f10)
             if not size:
                 return
