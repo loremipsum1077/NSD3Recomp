@@ -26,7 +26,10 @@
 //
 // The decomp's SNOFiles.cpp is patched to ask D3ModSnoOverride for every file it opens,
 // SNOTOC.cpp to call D3ModLooseRegister once the game's file list is read, and Prefetch.cpp
-// to ask D3ModSnoIsLoose before it reports a file as not loaded.
+// to load folder files through D3ModSnoLoadLoose instead of queueing an archive read (which
+// would find nothing), and to ask D3ModSnoIsLoose before it reports a file as not loaded.
+#include "X/Common/Definitions/Definitions.h"
+#include "X/Common/Game.h"
 #include "X/Common/SNO/SNOFiles.h"
 #include "X/Sigma/Files/XFiles.h"
 #include "X/Sigma/TypeDescriptor/TypeDescriptor.h"
@@ -108,31 +111,71 @@ BOOL D3ModSnoOverride(int32 snoGroup, uint32 uGuid, LPCSTR szName, FileReference
     return FALSE;
 }
 
-// Whether <Group>/<sno><ext> is in the folder, for the prefetcher (X/Client/Prefetch.cpp is
-// patched to ask before it reports a file as not loaded). Asked from several threads and
-// often, so each answer is kept.
-BOOL D3ModSnoIsLoose(int32 snoGroup, uint32 uGuid)
+// What is known of each <Group>/<sno><ext>: whether it is in the folder, and whether the
+// prefetcher has had it loaded. Asked from several threads and often.
+struct LooseState
 {
-    const std::string & sFolder = sLooseFolder();
-    if (sFolder.empty())
-    {
-        return FALSE;
-    }
-    static std::mutex sMutex;
-    static std::unordered_map<uint64_t, bool> sKnown;
+    bool bLoose;
+    bool bTried;
+};
+static std::mutex sLooseMutex;
+static std::unordered_map<uint64_t, LooseState> sLooseKnown;
+
+static LooseState & sLooseStateLocked(int32 snoGroup, uint32 uGuid)
+{
     uint64_t uKey = (static_cast<uint64_t>(static_cast<uint32>(snoGroup)) << 32) | uGuid;
-    std::lock_guard<std::mutex> tLock(sMutex);
-    auto it = sKnown.find(uKey);
-    if (it != sKnown.end())
+    auto it = sLooseKnown.find(uKey);
+    if (it != sLooseKnown.end())
     {
         return it->second;
     }
-    char szFile[512];
-    snprintf(szFile, sizeof szFile, "%s/%s/%u%s", sFolder.c_str(), SNOGroupGetName(snoGroup), uGuid, SNOGetGroupExtension(snoGroup));
-    struct stat st;
-    bool bLoose = stat(szFile, &st) == 0;
-    sKnown[uKey] = bLoose;
-    return bLoose;
+    const std::string & sFolder = sLooseFolder();
+    bool bLoose = false;
+    if (!sFolder.empty())
+    {
+        char szFile[512];
+        snprintf(szFile, sizeof szFile, "%s/%s/%u%s", sFolder.c_str(), SNOGroupGetName(snoGroup), uGuid, SNOGetGroupExtension(snoGroup));
+        struct stat st;
+        bLoose = stat(szFile, &st) == 0;
+    }
+    return sLooseKnown[uKey] = LooseState{bLoose, false};
+}
+
+// The prefetcher reads only from the archives (X/Client/Prefetch.cpp). It is patched to call
+// this first: a file in the folder is loaded here and then, on the calling thread, so the
+// game finds it loaded as it would an archive file once its read completed. Returns TRUE
+// when the file is in the folder (the prefetcher then leaves it alone).
+BOOL D3ModSnoLoadLoose(int32 snoGroup, uint32 uGuid)
+{
+    {
+        std::lock_guard<std::mutex> tLock(sLooseMutex);
+        LooseState & tState = sLooseStateLocked(snoGroup, uGuid);
+        if (!tState.bLoose)
+        {
+            return FALSE;
+        }
+        tState.bTried = true;
+    }
+    GroupDefinition * ptGroupDef = GameDefinitionGet((SNOGroup)snoGroup);
+    if (ptGroupDef)
+    {
+        void * lpDef = const_cast<void *>(ptGroupDef->LockR((SNO)uGuid, TRUE));
+        if (lpDef)
+        {
+            ptGroupDef->UnlockR(lpDef);
+        }
+    }
+    return TRUE;
+}
+
+// Whether a file in the folder has been through D3ModSnoLoadLoose, for the prefetcher's
+// status (also patched): one that would not load is then reported as loaded rather than
+// unloaded, so whatever waits on it (a scene on its lightmap) does not wait forever.
+BOOL D3ModSnoIsLoose(int32 snoGroup, uint32 uGuid)
+{
+    std::lock_guard<std::mutex> tLock(sLooseMutex);
+    const LooseState & tState = sLooseStateLocked(snoGroup, uGuid);
+    return tState.bLoose && tState.bTried;
 }
 
 // D3_DUMP_TYPES=<file>: the type descriptors as JSON, then quit.
