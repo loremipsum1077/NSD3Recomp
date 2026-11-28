@@ -19,8 +19,14 @@ def load(folder):
     T277 = {}
     for v in json.load(open(os.path.join(folder, 'types277.json'))).values():
         fs = v['fields']
-        T277.setdefault(v['name'], {'version': v['version'], 'size': fs[-1]['offset'],
-                                    'fields': [f for f in fs if f['type'] != 'DT_NULL']})
+        t = {'version': v['version'], 'size': fs[-1]['offset'], 'fields': [f for f in fs if f['type'] != 'DT_NULL']}
+        T277.setdefault(v['name'], t)
+        T277.setdefault('%s#%d' % (v['name'], t['size']), t)
+    # Some names are used by two types (Material: a colour block, and the Material group's
+    # file). Each is also kept as <name>#<size>, for naming a file's root type.
+    for k, t in list(T10.items()):
+        if 'size' in t:
+            T10.setdefault('%s#%d' % (k.split('@')[0], t['size']), t)
 
 # Basic types: (struct format, size). Names differ a little between the versions.
 BASIC = {
@@ -418,7 +424,21 @@ def after_markerset(out, d, cv=None):
     struct.pack_into('<%dH' % len(idx), out.b, so, *idx)
     out.put(d + 0xb4, '<2I', so if idx else 0, len(idx) * 2)
     out.put(d + 0xb0, '<i', len(idx))
-AFTER = {'Scene': after_scene, 'Appearance': after_appearance, 'MarkerSet': after_markerset}
+def after_weather(out, d):
+    # Fields 2.7.7 added to each WeatherStateParams (at 0x0e8 and 0x134): a scale after the
+    # second colour, and two distances at the end. Weather files both versions ship have
+    # the scale 1 and the distances equal to the first two (the fog's start and end).
+    for p in (d + 0xe8, d + 0x134):
+        if struct.unpack_from('<f', out.b, p + 0x24)[0] == 0:
+            struct.pack_into('<f', out.b, p + 0x24, 1.0)
+        if struct.unpack_from('<2f', out.b, p + 0x44) == (0.0, 0.0):
+            out.b[p + 0x44:p + 0x4c] = out.b[p + 0x8:p + 0x10]
+    for p in (d + 0xbc, d + 0x1a8):  # a fourth SNO, and an int, both -1 in Blizzard's files
+        if struct.unpack_from('<i', out.b, p)[0] == 0:
+            out.put(p, '<i', -1)
+
+AFTER = {'Scene': after_scene, 'Appearance': after_appearance, 'MarkerSet': after_markerset,
+         'Weather': after_weather}
 
 # Before converting: facts the per-struct fix-ups need from the whole 1.0 file.
 def before_appearance(cv):

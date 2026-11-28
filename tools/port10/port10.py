@@ -3,10 +3,12 @@
 Loose Files mod (D3_MOD_LOOSE_FILES, src/mods/loose_files.cpp).
 
 1.0 shipped arenas that later versions dropped. Their scenes, models, collision, marker
-sets and textures are still on the 1.0 discs; this converts them from 1.0's 32-bit
-layouts to 2.7.7's 64-bit ones with the two versions' own type descriptor tables
-(textures in texture.py), and builds a 2.7.7 world that places the scenes. Nothing of the game is in this repository: every input comes from
-your own copies of the two versions, and the outputs stay on your computer.
+sets, textures, materials, lights, particles and weather are still on the 1.0 discs; this
+converts them from 1.0's 32-bit layouts to 2.7.7's 64-bit ones with the two versions' own
+type descriptor tables (textures in texture.py), and builds a 2.7.7 world that places the
+scenes and keeps the arena's environment (world.py). Nothing of the game is in this
+repository: every input comes from your own copies of the two versions, and the outputs
+stay on your computer.
 
     python3 tools/port10/port10.py setup [--disc build/D3C1.0] [--game game/2.7.7] [--d3 BUILD/d3]
     python3 tools/port10/port10.py list
@@ -58,6 +60,10 @@ GROUPS = {
     "MarkerSet": (24, "MarkerSet", ".mrk", "MarkerSet"),
     "Worlds": (48, "Worlds", ".wrl", "Worlds"),
     "Textures": (44, "Textures", ".tex", "Textures"),  # texture.py, not convert.py
+    "Material": (57, "Material", ".mat", "Material#136"),
+    "Light": (23, "Light", ".lit", "Light"),
+    "Particle": (27, "Particle", ".prt", "Particle"),
+    "Weather": (47, "Weather", ".wth", "Weather"),
 }
 # 2.7.7 files whose headers (version, asset version, layout hash) the converted files get,
 # and the world every ported world is built from (the PvP dueling arena's).
@@ -68,6 +74,10 @@ SAMPLES = {
     "MarkerSet": "MarkerSet\\PvP_Duel_Small_Multi_E01_N01.mrk",
     "Worlds": "Worlds\\PvP_Duel_Small.wrl",
     "Textures": "Textures\\PvP_Duel_Small_Multi_W01_S01_worldMask.tex",
+    "Material": "Material\\trOut_nephalemTiles_ground_mstr.mat",
+    "Light": "Light\\a2dun_Aqd_torch.lit",
+    "Particle": "Particle\\a2dun_aqd_TorchFire.prt",
+    "Weather": "Weather\\a2dun_Zolt_Weather1.wth",
 }
 # The 1.0 arena worlds and the scenes each is made of: a name, or a prefix ending in _ for
 # tiled arenas (their tiles' names give the layout, world.tile_position).
@@ -90,6 +100,11 @@ ARENAS = {
     "PvP_Zolt_Ruins_Arena": ["PvP_Zolt_Ruins_Arena"],
 }
 NAV_SQUARE = 2.5  # a navmesh square's width in world units
+# 1.0 actors the arenas place that 2.7.7 no longer has, and the 2.7.7 actor put in their
+# place: 1.0 SNO -> (1.0 name, 2.7.7 Actor name).
+STANDINS = {
+    4921: ("pvpHealthSpawner", "PVP_HealingWell"),  # 2.7.7's dueling arenas heal with this
+}
 
 
 def say(*a):
@@ -272,6 +287,8 @@ class Port:
             return sno
         entry = self.disc.by_id.get(sno)
         if entry is None:
+            if sno in STANDINS:
+                return self.game.names[(1, STANDINS[sno][1].lower())]
             if sno > 0 and sno not in self.game.ids:
                 self.missing[sno] = self.missing.get(sno, 0) + 1
             return sno
@@ -335,6 +352,11 @@ class Port:
                 if pos is None:
                     sys.exit(f"{entry[2]}: cannot tell where this tile goes.")
             placed.append((self.number_for(entry), pos))
+            # The minimap draws each scene with the texture named mmap_<scene name>
+            # (SceneDefinitionGetMinimapName), found by name, so nothing names it by number.
+            mmap = disc.by_name.get(("Textures", "mmap_" + entry[2].lower()))
+            if mmap and not self.game.names.get((44, mmap[2].lower())):
+                self.number_for(mmap)
         self.drain()
         # The world: 2.7.7's dueling arena with these scenes, under the 1.0 world's number.
         xs = [p[0] for _, p in placed]
@@ -342,7 +364,14 @@ class Port:
         dx, dy = -min(xs), -min(ys)
         sno_world = self.number_for(w)
         self.queue.remove(w)
-        data = world.build(self.game.sample("Worlds"), sno_world, [(s, x + dx, y + dy) for s, (x, y) in placed])
+        def port_env(sno):
+            entry = self.disc.by_id.get(sno)
+            return self.number_for(entry) if entry and entry[0] != "Worlds" else None
+        env, log = world.environment(open(w[3], "rb").read(), self.game.sample("Worlds"), self.game.ids, port_env)
+        for line in log:
+            say("    " + line)
+        self.drain()
+        data = world.build(self.game.sample("Worlds"), sno_world, [(s, x + dx, y + dy) for s, (x, y) in placed], env=env)
         self.write("Worlds", sno_world, w[2], data)
         say(f"  Worlds/{w[2]} ({sno_world}): {len(placed)} scenes placed")
         return w[2]

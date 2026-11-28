@@ -70,22 +70,56 @@ def unplane(fmt, level, blocks):
     return bytes(out)
 
 
+LUT = 64            # a colour lookup table's size along each axis
+LUT_NVN_FORMAT = 0x25
+
+
+def lut_volume(plain):
+    """A 1.0 colour lookup table (512x512 B,G,R,A, 8x8 tiles of 64x64, tile z in row
+    order) -> 2.7.7's 64x64x64 R,G,B,A volume in the GPU's 3D block-linear layout: one
+    tile high, 16 slices deep, as nvn_metal.mm's Deswizzle3D reads it. Checked against
+    a2dun_zolt_color_A, which both versions ship: every texel matches."""
+    row_bytes = LUT * 4
+    out = bytearray(row_bytes * LUT * LUT)
+    tiles_across = row_bytes // 64
+    block_bytes = 512 * 16
+    for z in range(LUT):
+        tx, ty = z % 8, z // 8
+        z_base = (z // 16) * tiles_across * (LUT // 8) * block_bytes + (z % 16) * 512
+        for y in range(LUT):
+            at = ((ty * LUT + y) * 512 + tx * LUT) * 4
+            row = bytearray(plain[at:at + row_bytes])
+            row[0::4], row[2::4] = row[2::4], row[0::4]
+            row_base = z_base + (y // 8) * tiles_across * block_bytes
+            for x in range(0, row_bytes, 16):
+                o = row_base + (x // 64) * block_bytes + _tile_offset(x, y)
+                out[o:o + 16] = row[x:x + 16]
+    return bytes(out)
+
+
 def _block_header(size, offset, kind, index):
     return struct.pack('<4sIQQIII', b'HBvN', 0x24, size, offset, kind, index, 0)
 
 
-def package(fmt, width, height, levels):
-    """levels: plain mip data from the largest. Returns the NVN texture package."""
-    bb = BLOCK_BYTES[fmt]
-    data, offsets = bytearray(), []
-    for i, plain in enumerate(levels):
-        w, h = max(width >> i, 1), max(height >> i, 1)
-        row_bytes, rows = (w + 3) // 4 * bb, (h + 3) // 4
-        offsets.append(len(data))
-        data += swizzle(plain, row_bytes, rows)
-    header = struct.pack('<QIIIIIIII17I', len(data), DATA_ALIGN, width, height, 1, 1, NVN_FORMAT[fmt],
-                         len(levels), len(data), *(offsets + [0] * (17 - len(offsets))))
-    header += struct.pack('<Iii', 4, 0x10007, 0)  # layout and sparse, as 2.7.7's own textures have
+def package(fmt, width, height, levels, volume=None):
+    """levels: plain mip data from the largest. volume: instead, one tiled colour lookup
+    table (lut_volume). Returns the NVN texture package."""
+    if volume is not None:
+        data, offsets = volume, [0]
+        header = struct.pack('<QIIIIIIII17I', len(data), DATA_ALIGN, LUT, LUT, LUT, 2, LUT_NVN_FORMAT,
+                             1, len(data), *([0] * 17))
+        header += struct.pack('<Iii', LUT, 0x10007, 0)  # as 2.7.7's own lookup tables have
+    else:
+        bb = BLOCK_BYTES[fmt]
+        data, offsets = bytearray(), []
+        for i, plain in enumerate(levels):
+            w, h = max(width >> i, 1), max(height >> i, 1)
+            row_bytes, rows = (w + 3) // 4 * bb, (h + 3) // 4
+            offsets.append(len(data))
+            data += swizzle(plain, row_bytes, rows)
+        header = struct.pack('<QIIIIIIII17I', len(data), DATA_ALIGN, width, height, 1, 1, NVN_FORMAT[fmt],
+                             len(levels), len(data), *(offsets + [0] * (17 - len(offsets))))
+        header += struct.pack('<Iii', 4, 0x10007, 0)  # layout and sparse, as 2.7.7's own textures have
     assert len(header) == 0x78
     out = bytearray(struct.pack('<4sIII', b'DFvN', 0x10, 1, 1))
     out += _block_header(0x78, 0x24, 2, 0) + header
@@ -102,12 +136,15 @@ def convert_texture(src, header, sno):
     B = 0x10
     fmt, width, height, faces = struct.unpack_from('<4I', src, B + 0x10)
     mip_min, mip_max = struct.unpack_from('<2I', src, B + 0x20)
-    if fmt not in NVN_FORMAT:
+    # An uncompressed 512x512 with one level is a colour lookup table (weather colour
+    # correction); 2.7.7 keeps those as 64x64x64 volumes.
+    is_lut = fmt == 0 and (width, height, faces) == (512, 512, 1) and mip_min == 0 and mip_max == 0
+    if fmt not in NVN_FORMAT and not is_lut:
         return None, ['format %d is not converted yet' % fmt]
     if faces != 1 or mip_min != 0:
         return None, ['%d faces, first level %d: not converted yet' % (faces, mip_min)]
     levels = []
-    for i in range(mip_max + 1):
+    for i in range(0 if is_lut else mip_max + 1):
         w, h = max(width >> i, 1), max(height >> i, 1)
         if w < 4 or h < 4:
             break  # 2.7.7 stops at 4x4 for block formats (sComputeTextureParams)
@@ -119,13 +156,23 @@ def convert_texture(src, header, sno):
     # The definition (0x278 bytes), then its image ids, frames and the package.
     d = bytearray(0x278)
     struct.pack_into('<i', d, 0x0, sno)                      # RequiredDefinitionHeader.snoHandle
-    struct.pack_into('<8I', d, 0x10, fmt, width, height, 1, 1, 0, 0, len(levels) - 1)
+    if is_lut:
+        off, size = struct.unpack_from('<2I', src, B + 0x28)
+        if size < 512 * 512 * 4:
+            return None, ['lookup table holds %d bytes' % size]
+        volume = lut_volume(src[B + off:B + off + 512 * 512 * 4])
+        struct.pack_into('<8I', d, 0x10, 0, LUT, LUT, 1, LUT, 0, 0, 0)
+    else:
+        volume = None
+        struct.pack_into('<8I', d, 0x10, fmt, width, height, 1, 1, 0, 0, len(levels) - 1)
     # 1.0's bCubemap, import flags (bit 0x10: ignore the mip offset) and machine time, at
     # 0x35c; 2.7.7 keeps them at 0x258, then the console mip offset and lightmap V scale
     # (0 is 1), volume slices 1 and 1.
     struct.pack_into('<3I', d, 0x258, *struct.unpack_from('<3I', src, B + 0x35c))
-    struct.pack_into('<I', d, 0x26c, 1)                      # dwVolumeXSlices
-    struct.pack_into('<I', d, 0x270, 1)                      # dwVolumeYSlices
+    struct.pack_into('<2I', d, 0x26c, 1, 1)                  # dwVolumeXSlices, dwVolumeYSlices
+    if is_lut:
+        struct.pack_into('<I', d, 0x25c, 0x100)              # import flags, as 2.7.7's tables
+        struct.pack_into('<2I', d, 0x26c, 8, 8)              # slices across and down in 1.0's 2D form
     struct.pack_into('<2i', d, 0x228, *struct.unpack_from('<2i', src, B + 0x218))  # hotspot
     tail = bytearray()
 
@@ -149,7 +196,10 @@ def convert_texture(src, header, sno):
         frames += struct.pack('<I4f', string_hash_i(name) if name else 0, *struct.unpack_from('<4f', src, f + 0x40))
     if frames:
         struct.pack_into('<I2I', d, 0x210, len(frames) // 0x14, put(frames, 8), len(frames))
-    pkg = package(fmt, width, height, levels)
+    pkg = package(fmt, width, height, levels, volume)
     struct.pack_into('<2I', d, 0x30, put(pkg, 1), len(pkg))  # serTex[0][0]; the block ends here
-    log = ['%dx%d format %d, %d levels, package %d bytes' % (width, height, fmt, len(levels), len(pkg))]
+    if is_lut:
+        log = ['colour lookup table, as a %dx%dx%d volume, package %d bytes' % (LUT, LUT, LUT, len(pkg))]
+    else:
+        log = ['%dx%d format %d, %d levels, package %d bytes' % (width, height, fmt, len(levels), len(pkg))]
     return header[:0x10] + bytes(d) + bytes(tail), log

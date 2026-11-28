@@ -1,5 +1,7 @@
 # Builds a 2.7.7 world file that places a list of scenes, from a 2.7.7 world used as a
-# template: its environment, scripts and settings are kept, and its scene list is replaced.
+# template: its scripts and settings are kept, its scene list is replaced, and its
+# environment (sky colour, weather, music, ambient sound) is the 1.0 world's where 2.7.7
+# still has the files that names.
 #
 # Each scene goes in a SceneChunk copied from the template's first one (so it keeps that
 # chunk's level area and scene specification) with the scene's SNO and position, no rotation
@@ -30,10 +32,57 @@ def tile_position(name, size):
     return None
 
 
-def build(template, sno_world, scenes, level_area=None):
-    """template: 2.7.7 world bytes. scenes: [(scene sno, x, y)]. Returns the new world bytes."""
+ENV = 0x60  # Worlds.tEnvironment, in both versions
+# 1.0 Environment SNO fields -> 2.7.7's (WorldDefinition.h): music, ambient sound, reverb,
+# weather, irradiance, irradiance when dead. 1.0's combat music has no 2.7.7 field.
+ENV_SNOS = {0x98: 0x28, 0xa0: 0x38, 0xa4: 0x3c, 0xa8: 0x40, 0xac: 0x44, 0xb0: 0x48}
+# Fields an arena may leave empty; the others keep the template's file when 1.0 names none.
+ENV_OPTIONAL = {0x28, 0x38, 0x3c}
+# Files an unfinished 1.0 arena names in place of its own, which leave it unlit in 2.7.7
+# (NoWeather has no sun); the template's are kept instead.
+PLACEHOLDERS = {'NoWeather'}
+
+
+def environment(old_world, template, game_ids, port=None):
+    """The 1.0 world's environment, as {2.7.7 offset in Worlds: bytes} to write over the
+    template's: its sky colour and post-processing, and each file it names that 2.7.7 still
+    has in the same group as the template's (or any group when the template names none).
+    game_ids: 2.7.7 SNO -> (group, name). port(sno): the 2.7.7 number of a 1.0 file the
+    porter converts, or None. Also returns log lines."""
+    out, log = {}, []
+    e10, e = B + ENV, B + ENV
+    out[ENV] = bytes(old_world[e10:e10 + 0x24])  # rgbaSkyColor, tPostFXParams
+    for o10, o in ENV_SNOS.items():
+        sno = struct.unpack_from('<i', old_world, e10 + o10)[0]
+        mine = struct.unpack_from('<i', template, e + o)[0]
+        if sno in (0, -1):
+            if o in ENV_OPTIONAL:
+                out[ENV + o] = struct.pack('<i', -1)
+            continue
+        want = game_ids.get(mine, (None,))[0]
+        have = game_ids.get(sno)
+        if have and have[1] in PLACEHOLDERS:
+            log.append('environment: %s is a placeholder, kept the template\'s' % have[1])
+            continue
+        ported = port(sno) if port and not have else None
+        if have and (want is None or have[0] == want):
+            out[ENV + o] = struct.pack('<i', sno)
+            log.append('environment: %s' % have[1])
+        elif ported is not None:
+            out[ENV + o] = struct.pack('<i', ported)
+            log.append('environment: %d, converted' % sno)
+        else:
+            log.append('environment: %d is not in 2.7.7, kept the template\'s' % sno)
+    return out, log
+
+
+def build(template, sno_world, scenes, level_area=None, env=None):
+    """template: 2.7.7 world bytes. scenes: [(scene sno, x, y)]. env: {offset: bytes} to
+    write over the template's (environment()). Returns the new world bytes."""
     b = bytearray(template)
     struct.pack_into('<i', b, B + 0x0, sno_world)  # RequiredDefinitionHeader.snoHandle
+    for o, data in (env or {}).items():
+        b[B + o:B + o + len(data)] = data
     wsd_off, wsd_size = struct.unpack_from('<2I', b, B + 0x10)
     assert wsd_size == 0x90, 'the template should have one WorldServerData'
     wsd = B + wsd_off

@@ -466,7 +466,8 @@ only the themed seasons, 14 to 37, and turns on `D3_MOD_THEME=Season` with them.
 ### 1.0 arenas
 
 Diablo III's 1.0 PC release (2012) had PvP arenas the later game dropped. Their scenes,
-models, collision and marker sets are still on the 1.0 discs, and `tools/port10` converts
+models, collision, marker sets, textures, materials, lights, particles and weather are
+still on the 1.0 discs, and `tools/port10` converts
 them to 2.7.7's layouts so the Loose Files mod can load them. Nothing of either game is in
 this repository: the conversion reads your own copies, and its results stay in `build/`
 and your save folder. Never commit them.
@@ -492,8 +493,9 @@ D3_LOAD_WORLD=PvP_Neph_Arena build/macos/d3
 `setup` reads both versions' type tables (1.0's by running the 1.0 Mac client's start-up
 code under Unicorn; 2.7.7's from the build), 2.7.7's file list and a few 2.7.7 files used
 as templates into `build/port10/`. `port` converts an arena and every scene, model,
-collision mesh and marker set it uses that 2.7.7 lacks, field by field from the two type
-tables, and builds a world for it from 2.7.7's dueling arena. `list` shows the 16 arenas;
+collision mesh, marker set, texture, material, light, particle effect and weather it uses
+that 2.7.7 lacks, field by field from the two type tables, and builds a world for it from
+2.7.7's dueling arena. `list` shows the 16 arenas;
 `selftest` converts a marker set both versions ship and compares it with 2.7.7's copy.
 
 What carries over and what does not:
@@ -504,18 +506,36 @@ What carries over and what does not:
 - Tiled arenas are laid out from their tiles' names, as 2.7.7's own Azmodan arena is
   (`E01_S02` style), or for PvP_Map2 by its grid (`x06_y04`, checked against where the
   tiles' walkable edges meet).
-- Markers that name something 2.7.7 no longer has are dropped: the arenas' health-globe
-  spawners, a few lights, particles and props. `port` lists them.
+- The world keeps the 1.0 arena's environment: sky colour, post-processing, weather (its
+  fog, colour correction and the lights that follow the player), ambient sound and
+  reverb. Music 2.7.7 no longer has is left as the template's. An arena whose weather is
+  1.0's `NoWeather` placeholder (PvP_Crypt_Arena_02, PvP_Garden_Arena) keeps the
+  template's instead: NoWeather has no sun, and 2.7.7 lights a scene from its weather's
+  sun, using the baked lightmap only as its shadow.
+- The arenas' health-globe spawner, which 2.7.7 no longer has, is replaced by 2.7.7's
+  PvP healing well (`STANDINS` in `port10.py`).
+- Markers that name an actor 2.7.7 no longer has are dropped: Keep's steam vents, the
+  caOut arena's coals, waypoint pieces, a barricade in each crypt, PVP_Pillar_01's test
+  pressure plates and PvP_Map2's grey-box walls. Actors are not converted. `port` lists
+  them.
 - Textures the arenas have that 2.7.7 lacks (PvP_Map2's and PvP_Octagon_Arena_01's main
   textures, the tiles' masks and baked lightmaps) are converted: DXT1, DXT3 and DXT5 with
   one face. 1.0 stores each level's blocks split into planes (DXT1: all the colour
   endpoints, then all the selectors), which are put back together, as the 1.0 client does
   when it loads them; the levels are then tiled for the Switch's GPU and packaged as the
-  NVN texture packages 2.7.7 loads. Other formats are listed by `port` as not converted.
-- Seen in the game so far: PvP_Butcher_Arena_01 and PvP_Neph_Arena draw and play, Neph
-  with its converted textures. PvP_Map2, PvP_Octagon_Arena_01 (with its converted floor)
-  and PvP_Keep_Arena (with its converted lightmap) draw; Keep's surfaces are still
-  untextured. The others load without error but have not been looked at closely.
+  NVN texture packages 2.7.7 loads. 1.0's colour lookup tables (uncompressed 512x512, 8x8
+  tiles of 64x64) become 2.7.7's 64x64x64 volumes; `a2dun_zolt_color_A`, which both
+  versions ship, converts to a byte-identical copy of 2.7.7's. Each scene's minimap
+  texture (`mmap_<scene>`, found by name) is converted too. Other formats are listed by
+  `port` as not converted.
+- Seen in the game: all 16 load, draw and are lit by their own weather. Butcher, the
+  sewer, caOut, Neph, both Zolt arenas and Crypt_Arena_01 look finished. Some were
+  unfinished in 1.0 and look it: PvP_CraterST_Arena's ground, PvP_Garden_Arena,
+  PvP_Keep_Arena, PVP_Pillar_01 and PvP_Stairs_Arena_01 are grey boxes (untextured or
+  placeholder materials in the 1.0 files), and Keep's own weather (a3Dun_Keep_A_Forge_PVP)
+  has no sun, so it is very dark. Map2, Maze, Octagon, Pillar and Stairs have no minimap:
+  1.0 ships none for them. Players start where the 1.0 start markers put them, near the
+  arena's corners.
 
 ## Measuring progress
 
